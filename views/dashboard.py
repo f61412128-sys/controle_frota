@@ -36,7 +36,7 @@ def carregar_dados_dashboard():
     except Exception:
         qtd_motoristas = 0
 
-    # Manutenções e Custo Total dinâmico
+    # Manutenções e Custo Total dinâmico (Varre todas as colunas numéricas possíveis)
     qtd_manut_andamento = 0
     custo_total_manut = 0.0
     try:
@@ -47,17 +47,23 @@ def carregar_dados_dashboard():
         pass
 
     try:
-        # Descobrir o nome correto da coluna de valor/custo na tabela manutencoes
         colunas_manut = [info[1] for info in cursor.execute("PRAGMA table_info(manutencoes)").fetchall()]
+        df_manut_raw_sql = pd.read_sql_query("SELECT * FROM manutencoes", conn)
+        
+        # Encontrar qual coluna representa o valor/custo
         col_valor_encontrada = None
-        for c in ["valor", "custo", "preco", "valor_total", "total"]:
-            if c in colunas_manut:
+        for c in ["valor", "custo", "preco", "valor_total", "total", "gastos", "valor_servico"]:
+            if c in df_manut_raw_sql.columns:
                 col_valor_encontrada = c
                 break
         
-        if col_valor_encontrada:
-            res_soma = cursor.execute(f"SELECT SUM({col_valor_encontrada}) FROM manutencoes").fetchone()[0]
-            custo_total_manut = float(res_soma) if res_soma else 0.0
+        if col_valor_encontrada and not df_manut_raw_sql.empty:
+            # Limpa e converte para numérico com segurança
+            valores_limpos = pd.to_numeric(
+                df_manut_raw_sql[col_valor_encontrada].astype(str).str.replace('R$', '', regex=True).str.replace('.', '', regex=False).str.replace(',', '.', regex=False),
+                errors='coerce'
+            )
+            custo_total_manut = float(valores_limpos.sum())
     except Exception:
         custo_total_manut = 0.0
 
