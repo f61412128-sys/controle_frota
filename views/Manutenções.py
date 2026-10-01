@@ -4,6 +4,35 @@ from database.connection import get_connection
 from views.services.cadastros_service import listar_veiculos
 
 
+def garantir_tabela_manutencoes():
+    """Garante que a tabela manutencoes existe com todas as colunas necessárias."""
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS manutencoes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                veiculo_id INTEGER,
+                tipo TEXT,
+                status TEXT,
+                problema TEXT,
+                oficina TEXT,
+                km REAL,
+                valor REAL,
+                data_entrada TEXT,
+                proximo_km REAL,
+                FOREIGN KEY (veiculo_id) REFERENCES veiculos (id)
+            )
+        """
+        )
+        conn.commit()
+    except Exception as e:
+        print(f"Erro ao criar tabela de manutenções: {e}")
+    finally:
+        conn.close()
+
+
 def salvar_manutencao(
     veiculo_id,
     tipo,
@@ -16,6 +45,7 @@ def salvar_manutencao(
     proximo_km,
 ):
     """Insere o registo de manutenção utilizando a conexão oficial do sistema."""
+    garantir_tabela_manutencoes()
     conn = get_connection()
     try:
         cursor = conn.cursor()
@@ -48,6 +78,7 @@ def salvar_manutencao(
 
 def carregar_manutencoes():
     """Carrega o histórico de manutenções utilizando a conexão oficial do sistema."""
+    garantir_tabela_manutencoes()
     conn = get_connection()
     try:
         df = pd.read_sql_query(
