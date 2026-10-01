@@ -1,7 +1,6 @@
-import sqlite3
 import pandas as pd
 import streamlit as st
-from config import DB_PATH
+from database.connection import get_connection
 from views.services.cadastros_service import listar_veiculos
 
 
@@ -16,8 +15,9 @@ def salvar_manutencao(
     data_entrada,
     proximo_km,
 ):
-    """Insere o registo de manutenção na base de dados SQLite."""
-    with sqlite3.connect(DB_PATH) as conn:
+    """Insere o registo de manutenção utilizando a conexão oficial do sistema."""
+    conn = get_connection()
+    try:
         cursor = conn.cursor()
         cursor.execute(
             """
@@ -39,25 +39,32 @@ def salvar_manutencao(
             ),
         )
         conn.commit()
+    except Exception as e:
+        conn.rollback()
+        raise e
+    finally:
+        conn.close()
 
 
 def carregar_manutencoes():
-    """Carrega o histórico de manutenções com os dados do veículo."""
-    with sqlite3.connect(DB_PATH) as conn:
-        try:
-            df = pd.read_sql_query(
-                """
-                SELECT m.id, v.placa, v.modelo, m.tipo, m.status, m.problema AS descricao, 
-                       m.oficina, m.km, m.valor, m.data_entrada, m.proximo_km
-                FROM manutencoes m
-                JOIN veiculos v ON m.veiculo_id = v.id
-                ORDER BY m.id DESC
-            """,
-                conn,
-            )
-            return df
-        except Exception:
-            return pd.DataFrame()
+    """Carrega o histórico de manutenções utilizando a conexão oficial do sistema."""
+    conn = get_connection()
+    try:
+        df = pd.read_sql_query(
+            """
+            SELECT m.id, v.placa, v.modelo, m.tipo, m.status, m.problema AS descricao, 
+                   m.oficina, m.km, m.valor, m.data_entrada, m.proximo_km
+            FROM manutencoes m
+            JOIN veiculos v ON m.veiculo_id = v.id
+            ORDER BY m.id DESC
+        """,
+            conn,
+        )
+        return df
+    except Exception:
+        return pd.DataFrame()
+    finally:
+        conn.close()
 
 
 def render():
@@ -166,12 +173,10 @@ def render():
         df_manut = carregar_manutencoes()
 
         if not df_manut.empty:
-            # Soma os custos apenas de manutenções concluídas ou de toda a frota se preferir
-            gasto_total = df_manut[
-                df_manut["status"].str.lower() == "concluída"
-            ]["valor"].sum()
+            # Soma total de todas as manutenções registadas para garantir visualização imediata
+            gasto_total = df_manut["valor"].sum()
             st.metric(
-                label="Gasto Total em Manutenção (Concluídas)",
+                label="Gasto Total em Manutenção",
                 value=f"R$ {gasto_total:,.2f}",
             )
 
