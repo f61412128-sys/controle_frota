@@ -173,12 +173,12 @@ def salvar_veiculo(
     chassi,
     km_atual,
     motorista_id,
-    status="Disponível",
     tipo_propriedade="Próprio",
     locadora=None,
     inicio_contrato=None,
     fim_contrato=None,
     valor_mensal=0.0,
+    status="Disponível",
 ):
     conn = get_connection()
     try:
@@ -228,12 +228,12 @@ def atualizar_veiculo(
     chassi,
     km_atual,
     motorista_id,
-    status="Disponível",
     tipo_propriedade="Próprio",
     locadora=None,
     inicio_contrato=None,
     fim_contrato=None,
     valor_mensal=0.0,
+    status="Disponível",
 ):
     conn = get_connection()
     try:
