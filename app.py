@@ -72,12 +72,22 @@ except Exception as e:
     st.exception(e)
     st.stop()
 
-# --- SESSÃO / LOGIN ---
+# --- SESSÃO / LOGIN COM PERSISTÊNCIA NA URL (ANTI-REFRESH) ---
 if "logado" not in st.session_state:
-    st.session_state["logado"] = False
-    st.session_state["perfil"] = None
-    st.session_state["usuario_nome"] = ""
-    st.session_state["motorista_id"] = None
+    params = st.query_params
+    if params.get("logado") == "true":
+        st.session_state["logado"] = True
+        st.session_state["perfil"] = params.get("perfil", "motorista")
+        st.session_state["usuario_nome"] = params.get("nome", "Utilizador")
+        mot_id_str = params.get("motorista_id")
+        st.session_state["motorista_id"] = (
+            int(mot_id_str) if mot_id_str and mot_id_str.isdigit() else None
+        )
+    else:
+        st.session_state["logado"] = False
+        st.session_state["perfil"] = None
+        st.session_state["usuario_nome"] = ""
+        st.session_state["motorista_id"] = None
 
 if not st.session_state["logado"]:
     col1, col2, col3 = st.columns([1, 2, 1])
@@ -92,19 +102,31 @@ if not st.session_state["logado"]:
         if btn_entrar:
             usuario_db = autenticar_usuario(usuario_input, senha_input)
 
-            if usuario_db:
+            if usuario_db or (
+                usuario_input.lower() == "admin" and senha_input == "admin123"
+            ):
+                if usuario_db:
+                    perfil = usuario_db["perfil"]
+                    nome = usuario_db["login"].capitalize()
+                    mot_id = usuario_db["motorista_id"]
+                else:
+                    perfil = "admin"
+                    nome = "Administrador Mestre"
+                    mot_id = ""
+
+                # Grava na sessão
                 st.session_state["logado"] = True
-                st.session_state["perfil"] = usuario_db["perfil"]
-                st.session_state["usuario_nome"] = (
-                    usuario_db["login"].capitalize()
-                )
-                st.session_state["motorista_id"] = usuario_db["motorista_id"]
-                st.rerun()
-            elif usuario_input.lower() == "admin" and senha_input == "admin123":
-                st.session_state["logado"] = True
-                st.session_state["perfil"] = "admin"
-                st.session_state["usuario_nome"] = "Administrador Mestre"
-                st.session_state["motorista_id"] = None
+                st.session_state["perfil"] = perfil
+                st.session_state["usuario_nome"] = nome
+                st.session_state["motorista_id"] = mot_id
+
+                # Grava na URL para resistir ao refresh/recarregamento
+                st.query_params["logado"] = "true"
+                st.query_params["perfil"] = perfil
+                st.query_params["nome"] = nome
+                if mot_id:
+                    st.query_params["motorista_id"] = str(mot_id)
+
                 st.rerun()
             else:
                 st.error("Usuário ou senha incorretos.")
@@ -138,6 +160,7 @@ else:
         st.session_state["perfil"] = None
         st.session_state["usuario_nome"] = ""
         st.session_state["motorista_id"] = None
+        st.query_params.clear()  # Limpa os dados da URL no logout
         st.rerun()
 
     st.sidebar.divider()
