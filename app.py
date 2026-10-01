@@ -57,16 +57,10 @@ st.markdown(
         font-weight: bold;
     }
 
-    /* Garante que qualquer elemento de controle da sidebar fique visível */
-    [data-testid="stSidebarNav"] {
-        background-color: transparent;
-    }
-    
-    /* Força visibilidade em dispositivos móveis da barra lateral */
+    /* Esconde completamente os resíduos de texto quando a sidebar estiver fechada em telas pequenas */
     @media (max-width: 992px) {
-        section[data-testid="stSidebar"] {
-            width: 80% !important;
-            transform: translateX(0%);
+        section[data-testid="stSidebar"][aria-expanded="false"] {
+            margin-left: -350px !important;
         }
     }
     </style>
