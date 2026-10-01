@@ -98,6 +98,8 @@ def carregar_dados_dashboard():
                 cols["problema"] = "Serviço"
             elif "descricao" in df_m_raw.columns:
                 cols["descricao"] = "Serviço"
+            elif "servico_realizado" in df_m_raw.columns:
+                cols["servico_realizado"] = "Serviço"
             if "oficina" in df_m_raw.columns:
                 cols["oficina"] = "Oficina"
             if col_valor_encontrada and col_valor_encontrada in df_m_raw.columns:
@@ -107,7 +109,7 @@ def carregar_dados_dashboard():
             if "data_entrada" in df_m_raw.columns:
                 cols["data_entrada"] = "Data Entrada"
 
-            df_manutencoes = df_m_raw[list(cols.keys())].rename(columns=cols)
+            df_manutencoes = df_m_raw[[c for c in cols.keys() if c in df_m_raw.columns]].rename(columns=cols)
         else:
             df_manutencoes = pd.DataFrame()
     except Exception:
@@ -167,31 +169,31 @@ def render_dashboard(contar_registros_fn=None):
             "df_veiculos_completo": pd.DataFrame(),
         }
 
-    # --- CARDS DE MÉTRICAS ---
-    col1, col2, col3, col4, col5, col6 = st.columns(6)
+    # --- CARDS DE MÉTRICAS PRINCIPAIS ---
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("🚚 Frota Total", dados["veiculos"])
+    c2.metric("🏢 Próprios", dados["proprios"])
+    c3.metric("📋 Alugados", dados["alugados"])
+    c4.metric("🛠️ Em Manutenção", dados["manut_andamento"])
 
-    col1.metric("🚚 Frota Total", dados["veiculos"])
-    col2.metric("🏢 Próprios", dados["proprios"])
-    col3.metric("📋 Alugados", dados["alugados"])
-    col4.metric(
+    c5, c6, c7, c8 = st.columns(4)
+    c5.metric("💰 Custo Manutenções", f"R$ {dados['custo_total']:,.2f}")
+    c6.metric("👨‍✈️ Motoristas", dados["motoristas"])
+    c7.metric("⚠ Ocorrências", dados["pendencias"])
+    c8.metric(
         "📄 Venc. Contratos",
         dados["contratos_atencao"],
         delta="Atenção" if dados["contratos_atencao"] > 0 else "OK",
         delta_color="inverse" if dados["contratos_atencao"] > 0 else "normal",
     )
-    col5.metric("👨‍✈️ Motoristas", dados["motoristas"])
-    col6.metric("🛠️ Em Manutenção", dados["manut_andamento"])
 
     st.divider()
-
-    # Se quiser ver o custo total de manutenções num indicador extra ou subtítulo:
-    st.caption(f"💰 **Custo Total em Manutenções Registadas:** R$ {dados['custo_total']:,.2f}")
 
     # --- ABAS INFORMATIVAS ---
     tab_contratos, tab_rodizio, tab_manut, tab_pendencias, tab_stats = st.tabs([
         "📄 Gestão de Contratos & Frota",
         "🚘 Rodízio Hoje",
-        "🛠️️ Manutenções Recentes",
+        "🛠 Manutenções Recentes",
         "⚠ Ocorrências & Defeitos",
         "📊 Stats Banco",
     ])
@@ -228,12 +230,12 @@ def render_dashboard(contar_registros_fn=None):
                         "valor_mensal",
                     ]
                     st.dataframe(
-                        df_alugados[cols_alugados],
+                        df_alugados[[c for c in cols_alugados if c in df_alugados.columns]],
                         use_container_width=True,
                         hide_index=True,
                     )
                 else:
-                    st.info("Nenhum veículo alugado/terceirizado cadastrado na base de dados. Edite alguns veículos para testar.")
+                    st.info("Nenhum veículo alugado/terceirizado encontrado na base.")
 
             with sub2:
                 if not df_proprios.empty:
@@ -244,7 +246,7 @@ def render_dashboard(contar_registros_fn=None):
                         "tipo_propriedade",
                     ]
                     st.dataframe(
-                        df_proprios[cols_proprios],
+                        df_proprios[[c for c in cols_proprios if c in df_proprios.columns]],
                         use_container_width=True,
                         hide_index=True,
                     )
