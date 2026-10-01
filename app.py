@@ -44,7 +44,7 @@ st.markdown(
     header {visibility: hidden;}
     
     .block-container {
-        padding-top: 1rem;
+        padding-top: 0.5rem;
         padding-bottom: 2rem;
         padding-left: 0.8rem;
         padding-right: 0.8rem;
@@ -57,10 +57,11 @@ st.markdown(
         font-weight: bold;
     }
 
-    /* Esconde completamente os resíduos de texto quando a sidebar estiver fechada em telas pequenas */
+    /* Correção total para mobile: garante que a sidebar abra por cima e ocupe o espaço correto sem quebrar */
     @media (max-width: 992px) {
-        section[data-testid="stSidebar"][aria-expanded="false"] {
-            margin-left: -350px !important;
+        section[data-testid="stSidebar"] {
+            width: 85vw !important;
+            z-index: 999999 !important;
         }
     }
     </style>
