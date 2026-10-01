@@ -17,28 +17,31 @@ def carregar_dados_dashboard():
     ).fetchone()[0]
 
     qtd_proprios = cursor.execute(
-        "SELECT COUNT(*) FROM veiculos WHERE status != 'Inativo' AND LOWER(tipo_propriedade) LIKE '%proprio%'"
+        "SELECT COUNT(*) FROM veiculos WHERE status != 'Inativo' AND (LOWER(tipo_propriedade) LIKE '%proprio%' OR LOWER(tipo_propriedade) LIKE '%próprio%')"
     ).fetchone()[0]
 
     qtd_alugados = cursor.execute(
         """
         SELECT COUNT(*) FROM veiculos 
         WHERE status != 'Inativo' 
-          AND (LOWER(tipo_propriedade) LIKE '%alugado%' OR LOWER(tipo_propriedade) LIKE '%terceirizado%')
+          AND (LOWER(tipo_propriedade) LIKE '%alugado%' OR LOWER(tipo_propriedade) LIKE '%terceirizado%' OR LOWER(tipo_propriedade) LIKE '%locado%')
     """
     ).fetchone()[0]
 
     # Contadores de motoristas
-    qtd_motoristas = cursor.execute(
-        "SELECT COUNT(*) FROM motoristas WHERE status = 'Ativo'"
-    ).fetchone()[0]
+    try:
+        qtd_motoristas = cursor.execute(
+            "SELECT COUNT(*) FROM motoristas WHERE status = 'Ativo'"
+        ).fetchone()[0]
+    except Exception:
+        qtd_motoristas = 0
 
     try:
         qtd_manut_andamento = cursor.execute(
             "SELECT COUNT(*) FROM manutencoes WHERE LOWER(status) LIKE '%andamento%'"
         ).fetchone()[0]
         
-        # Soma todos os valores de manutenções cadastradas (independentemente do status)
+        # Soma todos os valores de manutenções cadastradas
         custo_total_manut = (
             cursor.execute(
                 "SELECT SUM(valor) FROM manutencoes"
@@ -109,7 +112,7 @@ def carregar_dados_dashboard():
         df_alug = df_veiculos_completo[
             df_veiculos_completo["tipo_propriedade"]
             .str.lower()
-            .str.contains("alugado|terceirizado", na=False)
+            .str.contains("alugado|terceirizado|locado", na=False)
         ]
         if not df_alug.empty:
             hoje = datetime.date.today()
@@ -137,6 +140,20 @@ def carregar_dados_dashboard():
 
 def render_dashboard(contar_registros_fn=None):
     st.title("📊 Painel Geral")
+
+    # --- DIAGNÓSTICO VISUAL RÁPIDO NA TELA ---
+    with st.expander("🔍 Ver o que está guardado no Banco (Debug)", expanded=True):
+        try:
+            conn = get_connection()
+            df_dv = pd.read_sql_query("SELECT id, placa, tipo_propriedade FROM veiculos", conn)
+            st.write("**Tipos de propriedade na tabela veículos:**", df_dv["tipo_propriedade"].unique() if not df_dv.empty else "Nenhum veículo")
+            
+            df_dm = pd.read_sql_query("SELECT * FROM manutencoes", conn)
+            st.write("**Conteúdo da tabela manutenções:**", df_dm)
+            conn.close()
+        except Exception as e:
+            st.error(f"Erro no debug: {e}")
+    # ----------------------------------------
 
     try:
         dados = carregar_dados_dashboard()
@@ -194,7 +211,7 @@ def render_dashboard(contar_registros_fn=None):
             df_alugados = df_v[
                 df_v["tipo_propriedade"]
                 .str.lower()
-                .str.contains("alugado|terceirizado", na=False)
+                .str.contains("alugado|terceirizado|locado", na=False)
             ]
 
             sub1, sub2 = st.tabs(
