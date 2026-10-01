@@ -36,20 +36,29 @@ def carregar_dados_dashboard():
     except Exception:
         qtd_motoristas = 0
 
+    # Manutenções e Custo Total dinâmico
+    qtd_manut_andamento = 0
+    custo_total_manut = 0.0
     try:
         qtd_manut_andamento = cursor.execute(
             "SELECT COUNT(*) FROM manutencoes WHERE LOWER(status) LIKE '%andamento%'"
         ).fetchone()[0]
-        
-        # Soma todos os valores de manutenções cadastradas
-        custo_total_manut = (
-            cursor.execute(
-                "SELECT SUM(valor) FROM manutencoes"
-            ).fetchone()[0]
-            or 0.0
-        )
     except Exception:
-        qtd_manut_andamento = 0
+        pass
+
+    try:
+        # Descobrir o nome correto da coluna de valor/custo na tabela manutencoes
+        colunas_manut = [info[1] for info in cursor.execute("PRAGMA table_info(manutencoes)").fetchall()]
+        col_valor_encontrada = None
+        for c in ["valor", "custo", "preco", "valor_total", "total"]:
+            if c in colunas_manut:
+                col_valor_encontrada = c
+                break
+        
+        if col_valor_encontrada:
+            res_soma = cursor.execute(f"SELECT SUM({col_valor_encontrada}) FROM manutencoes").fetchone()[0]
+            custo_total_manut = float(res_soma) if res_soma else 0.0
+    except Exception:
         custo_total_manut = 0.0
 
     # Ocorrências pendentes
@@ -91,8 +100,8 @@ def carregar_dados_dashboard():
                 cols["descricao"] = "Serviço"
             if "oficina" in df_m_raw.columns:
                 cols["oficina"] = "Oficina"
-            if "valor" in df_m_raw.columns:
-                cols["valor"] = "Valor (R$)"
+            if col_valor_encontrada and col_valor_encontrada in df_m_raw.columns:
+                cols[col_valor_encontrada] = "Valor (R$)"
             if "status" in df_m_raw.columns:
                 cols["status"] = "Status"
             if "data_entrada" in df_m_raw.columns:
@@ -141,20 +150,6 @@ def carregar_dados_dashboard():
 def render_dashboard(contar_registros_fn=None):
     st.title("📊 Painel Geral")
 
-    # --- DIAGNÓSTICO VISUAL RÁPIDO NA TELA ---
-    with st.expander("🔍 Ver o que está guardado no Banco (Debug)", expanded=True):
-        try:
-            conn = get_connection()
-            df_dv = pd.read_sql_query("SELECT id, placa, tipo_propriedade FROM veiculos", conn)
-            st.write("**Tipos de propriedade na tabela veículos:**", df_dv["tipo_propriedade"].unique() if not df_dv.empty else "Nenhum veículo")
-            
-            df_dm = pd.read_sql_query("SELECT * FROM manutencoes", conn)
-            st.write("**Conteúdo da tabela manutenções:**", df_dm)
-            conn.close()
-        except Exception as e:
-            st.error(f"Erro no debug: {e}")
-    # ----------------------------------------
-
     try:
         dados = carregar_dados_dashboard()
     except Exception as e:
@@ -189,11 +184,14 @@ def render_dashboard(contar_registros_fn=None):
 
     st.divider()
 
+    # Se quiser ver o custo total de manutenções num indicador extra ou subtítulo:
+    st.caption(f"💰 **Custo Total em Manutenções Registadas:** R$ {dados['custo_total']:,.2f}")
+
     # --- ABAS INFORMATIVAS ---
     tab_contratos, tab_rodizio, tab_manut, tab_pendencias, tab_stats = st.tabs([
         "📄 Gestão de Contratos & Frota",
         "🚘 Rodízio Hoje",
-        "🛠️ Manutenções Recentes",
+        "🛠️️ Manutenções Recentes",
         "⚠ Ocorrências & Defeitos",
         "📊 Stats Banco",
     ])
@@ -235,7 +233,7 @@ def render_dashboard(contar_registros_fn=None):
                         hide_index=True,
                     )
                 else:
-                    st.info("Nenhum veículo alugado/terceirizado cadastrado.")
+                    st.info("Nenhum veículo alugado/terceirizado cadastrado na base de dados. Edite alguns veículos para testar.")
 
             with sub2:
                 if not df_proprios.empty:
