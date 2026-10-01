@@ -72,14 +72,14 @@ except Exception as e:
     st.exception(e)
     st.stop()
 
-# --- GESTÃO DE SESSÃO COM URL (ANTI-REFRESH) ---
+# --- GESTÃO DE SESSÃO COM URL BLINDADA (ANTI-REFRESH) ---
 params = st.query_params
 
 if "logado" not in st.session_state:
     if params.get("logado") == "true":
         st.session_state["logado"] = True
-        st.session_state["perfil"] = params.get("perfil", "motorista")
-        st.session_state["usuario_nome"] = params.get("nome", "Utilizador")
+        st.session_state["perfil"] = params.get("perfil", "admin")
+        st.session_state["usuario_nome"] = params.get("nome", "Administrador")
         mot_id_str = params.get("motorista_id")
         st.session_state["motorista_id"] = (
             int(mot_id_str) if mot_id_str and mot_id_str.isdigit() else None
@@ -136,7 +136,7 @@ else:
     with c_topo1:
         st.caption(
             f"👤 **{st.session_state['usuario_nome']}** "
-            f"({st.session_state['perfil'].upper()})"
+            f"({str(st.session_state['perfil']).upper()})"
         )
     with c_topo2:
         if st.button("🚪 Sair", use_container_width=True):
