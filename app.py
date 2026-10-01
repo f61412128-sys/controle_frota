@@ -34,7 +34,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
-# Estilização CSS geral, limpeza de layout e bloqueio de pull-to-refresh indesejado no mobile
+# Estilização CSS geral e limpeza de layout
 st.markdown(
     """
     <style>
@@ -72,10 +72,9 @@ except Exception as e:
     st.exception(e)
     st.stop()
 
-# --- TRATAMENTO DE LOGOFF / LIMPEZA DE URL ANTES DE CARREGAR A SESSÃO ---
+# --- GESTÃO DE SESSÃO COM URL (ANTI-REFRESH) ---
 params = st.query_params
 
-# Se o utilizador clicou explicitamente em sair anteriormente, limpamos o estado
 if "logado" not in st.session_state:
     if params.get("logado") == "true":
         st.session_state["logado"] = True
@@ -116,13 +115,11 @@ if not st.session_state["logado"]:
                     nome = "Administrador Mestre"
                     mot_id = ""
 
-                # Grava na sessão
                 st.session_state["logado"] = True
                 st.session_state["perfil"] = perfil
                 st.session_state["usuario_nome"] = nome
                 st.session_state["motorista_id"] = mot_id
 
-                # Grava na URL para resistir ao refresh/recarregamento
                 st.query_params["logado"] = "true"
                 st.query_params["perfil"] = perfil
                 st.query_params["nome"] = nome
@@ -134,7 +131,6 @@ if not st.session_state["logado"]:
                 st.error("Usuário ou senha incorretos.")
 
 else:
-    # Sidebar apenas para Informações do Utilizador e Logout
     LOGO_PATH = Path(__file__).parent / "nossoar.jpg"
     logo = (
         base64.b64encode(open(LOGO_PATH, "rb").read()).decode()
@@ -163,7 +159,7 @@ else:
         st.session_state["usuario_nome"] = ""
         st.session_state["motorista_id"] = None
 
-        # Limpa completamente os parâmetros da URL para evitar auto-login no refresh
+        # Limpeza absoluta da URL e reset de parâmetros para permitir logout real
         st.query_params.clear()
         st.rerun()
 
@@ -498,10 +494,18 @@ else:
                                 km_atual=e_km,
                                 motorista_id=opcoes_motoristas.get(e_motorista),
                                 tipo_propriedade=e_tipo_propriedade,
-                                locadora=e_locadora,
-                                inicio_contrato=e_inicio_contrato,
-                                fim_contrato=e_fim_contrato,
-                                valor_mensal=e_valor_mensal,
+                                locadora=e_locadora
+                                if e_tipo_propriedade != "Próprio"
+                                else None,
+                                inicio_contrato=e_inicio_contrato
+                                if e_tipo_propriedade != "Próprio"
+                                else None,
+                                fim_contrato=e_fim_contrato
+                                if e_tipo_propriedade != "Próprio"
+                                else None,
+                                valor_mensal=e_valor_mensal
+                                if e_tipo_propriedade != "Próprio"
+                                else 0.0,
                                 status=v_dados.get("status", "Disponível"),
                             )
                             st.success("Veículo atualizado com sucesso!")
