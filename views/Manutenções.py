@@ -60,6 +60,9 @@ def carregar_manutencoes():
         """,
             conn,
         )
+        # Garante que a coluna valor seja sempre tratada como numérica (float)
+        if not df.empty and "valor" in df.columns:
+            df["valor"] = pd.to_numeric(df["valor"], errors="coerce").fillna(0.0)
         return df
     except Exception:
         return pd.DataFrame()
@@ -173,7 +176,6 @@ def render():
         df_manut = carregar_manutencoes()
 
         if not df_manut.empty:
-            # Soma total de todas as manutenções registadas para garantir visualização imediata
             gasto_total = df_manut["valor"].sum()
             st.metric(
                 label="Gasto Total em Manutenção",
