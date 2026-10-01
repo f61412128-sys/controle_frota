@@ -35,7 +35,7 @@ st.set_page_config(
     initial_sidebar_state="auto",
 )
 
-# Estilização CSS para Mobile / App e Correção da Sidebar (Gaveta Flutuante e Botão Fixo)
+# Estilização CSS para Mobile / App e Correção da Sidebar
 st.markdown(
     """
     <style>
@@ -57,28 +57,16 @@ st.markdown(
         font-weight: bold;
     }
 
-    /* FORÇA O BOTÃO DE ABRIR/FECHAR A SIDEBAR A FICAR SEMPRE VISÍVEL E ACESSÍVEL */
-    [data-testid="collapsedControl"] {
-        display: block !important;
-        visibility: visible !important;
-        opacity: 1 !important;
-        z-index: 999999 !important;
-        position: fixed !important;
-        top: 10px !important;
-        left: 10px !important;
-        background-color: rgba(255, 255, 255, 0.9) !important;
-        border-radius: 50% !important;
-        box-shadow: 0 2px 5px rgba(0,0,0,0.2) !important;
+    /* Garante que qualquer elemento de controle da sidebar fique visível */
+    [data-testid="stSidebarNav"] {
+        background-color: transparent;
     }
-
-    /* AJUSTE DA SIDEBAR PARA FUNCIONAR COMO GAVETA FLUTUANTE NO CELULAR/TELA ESTREITA */
+    
+    /* Força visibilidade em dispositivos móveis da barra lateral */
     @media (max-width: 992px) {
-        [data-testid="stSidebar"] {
-            position: fixed !important;
-            z-index: 999998 !important;
-            height: 100vh !important;
-            background-color: white !important;
-            box-shadow: 5px 0 15px rgba(0,0,0,0.1) !important;
+        section[data-testid="stSidebar"] {
+            width: 80% !important;
+            transform: translateX(0%);
         }
     }
     </style>
@@ -117,9 +105,9 @@ if not st.session_state["logado"]:
             if usuario_db:
                 st.session_state["logado"] = True
                 st.session_state["perfil"] = usuario_db["perfil"]
-                st.session_state["usuario_nome"] = usuario_db[
-                    "login"
-                ].capitalize()
+                st.session_state["usuario_nome"] = (
+                    usuario_db["login"].capitalize()
+                )
                 st.session_state["motorista_id"] = usuario_db["motorista_id"]
                 st.rerun()
             elif usuario_input.lower() == "admin" and senha_input == "admin123":
@@ -333,14 +321,24 @@ else:
                     st.subheader("Informações de Propriedade")
                     c9, c10 = st.columns(2)
                     tipo_propriedade = c9.selectbox(
-                        "Tipo de Propriedade*", ["Próprio", "Alugado", "Terceirizado"]
+                        "Tipo de Propriedade*",
+                        ["Próprio", "Alugado", "Terceirizado"],
                     )
                     locadora = c10.text_input("Locadora (se alugado)")
 
                     c11, c12, c13 = st.columns(3)
-                    inicio_contrato = c11.date_input("Início do Contrato", value=datetime.date.today())
-                    fim_contrato = c12.date_input("Fim do Contrato", value=datetime.date.today())
-                    valor_mensal = c13.number_input("Valor Mensal (R$)", min_value=0.0, value=0.0, step=100.0)
+                    inicio_contrato = c11.date_input(
+                        "Início do Contrato", value=datetime.date.today()
+                    )
+                    fim_contrato = c12.date_input(
+                        "Fim do Contrato", value=datetime.date.today()
+                    )
+                    valor_mensal = c13.number_input(
+                        "Valor Mensal (R$)",
+                        min_value=0.0,
+                        value=0.0,
+                        step=100.0,
+                    )
 
                     motorista_sel = st.selectbox(
                         "Motorista Responsável",
@@ -361,9 +359,15 @@ else:
                                 opcoes_motoristas.get(motorista_sel),
                                 tipo_propriedade,
                                 locadora if tipo_propriedade != "Próprio" else None,
-                                inicio_contrato if tipo_propriedade != "Próprio" else None,
-                                fim_contrato if tipo_propriedade != "Próprio" else None,
-                                valor_mensal if tipo_propriedade != "Próprio" else 0.0,
+                                inicio_contrato
+                                if tipo_propriedade != "Próprio"
+                                else None,
+                                fim_contrato
+                                if tipo_propriedade != "Próprio"
+                                else None,
+                                valor_mensal
+                                if tipo_propriedade != "Próprio"
+                                else 0.0,
                             )
                             st.success("Veículo cadastrado!")
                             st.rerun()
@@ -429,7 +433,11 @@ else:
                         c9, c10 = st.columns(2)
                         props_list = ["Próprio", "Alugado", "Terceirizado"]
                         prop_atual = v_dados.get("tipo_propriedade") or "Próprio"
-                        idx_p = props_list.index(prop_atual) if prop_atual in props_list else 0
+                        idx_p = (
+                            props_list.index(prop_atual)
+                            if prop_atual in props_list
+                            else 0
+                        )
                         e_tipo_propriedade = c9.selectbox(
                             "Tipo de Propriedade", props_list, index=idx_p
                         )
