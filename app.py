@@ -106,7 +106,7 @@ if not st.session_state["logado"]:
                 st.error("Usuário ou senha incorretos.")
 
 else:
-    # Sidebar apenas para Informações do Utilizador e Logout (Mantida limpa)
+    # Sidebar apenas para Informações do Utilizador e Logout
     LOGO_PATH = Path(__file__).parent / "nossoar.jpg"
     logo = (
         base64.b64encode(open(LOGO_PATH, "rb").read()).decode()
@@ -143,9 +143,8 @@ else:
         st.info("📱 Modo Checklist Ativo")
         render_checklist()
 
-    # --- PERFIL ADMINISTRADOR (Com menu principal no topo para nunca sumir) ---
+    # --- PERFIL ADMINISTRADOR ---
     elif st.session_state["perfil"] == "admin":
-        # Menu de navegação direto na tela principal (evita sumir no telemóvel)
         opcoes_menu = [
             "Dashboard",
             "Gestão de Usuários",
@@ -155,7 +154,6 @@ else:
             "Manutenções",
         ]
 
-        # Caixa de seleção visível no topo da página
         opcao = st.selectbox(
             "📍 Selecione o Módulo do Sistema:",
             opcoes_menu,
@@ -213,7 +211,6 @@ else:
                                 login_novo,
                                 senha_nova,
                                 perfil_novo,
-                                opcoes_m.get(motorista_vinc),
                             )
                             st.success("Usuário criado com sucesso!")
                             st.rerun()
@@ -339,28 +336,33 @@ else:
                     if st.form_submit_button("Salvar Veículo"):
                         if placa:
                             salvar_veiculo(
-                                placa,
-                                marca,
-                                modelo,
-                                ano,
-                                tipo,
-                                cor,
-                                chassi,
-                                km_atual,
-                                opcoes_motoristas.get(motorista_sel),
-                                tipo_propriedade,
-                                locadora if tipo_propriedade != "Próprio" else None,
-                                inicio_contrato
+                                placa=placa,
+                                marca=marca,
+                                modelo=modelo,
+                                ano=ano,
+                                tipo=tipo,
+                                cor=cor,
+                                chassi=chassi,
+                                km_atual=km_atual,
+                                motorista_id=opcoes_motoristas.get(
+                                    motorista_sel
+                                ),
+                                tipo_propriedade=tipo_propriedade,
+                                locadora=locadora
                                 if tipo_propriedade != "Próprio"
                                 else None,
-                                fim_contrato
+                                inicio_contrato=inicio_contrato
                                 if tipo_propriedade != "Próprio"
                                 else None,
-                                valor_mensal
+                                fim_contrato=fim_contrato
+                                if tipo_propriedade != "Próprio"
+                                else None,
+                                valor_mensal=valor_mensal
                                 if tipo_propriedade != "Próprio"
                                 else 0.0,
+                                status="Disponível",
                             )
-                            st.success("Veículo cadastrado!")
+                            st.success("Veículo cadastrado com sucesso!")
                             st.rerun()
 
             with tab_editar:
@@ -454,21 +456,22 @@ else:
 
                         if st.form_submit_button("Atualizar Veículo"):
                             atualizar_veiculo(
-                                v_dados["id"],
-                                e_placa,
-                                e_marca,
-                                e_modelo,
-                                e_ano,
-                                e_tipo,
-                                e_cor,
-                                e_chassi,
-                                e_km,
-                                opcoes_motoristas.get(e_motorista),
-                                e_tipo_propriedade,
-                                e_locadora,
-                                e_inicio_contrato,
-                                e_fim_contrato,
-                                e_valor_mensal,
+                                veiculo_id=v_dados["id"],
+                                placa=e_placa,
+                                marca=e_marca,
+                                modelo=e_modelo,
+                                ano=e_ano,
+                                tipo=e_tipo,
+                                cor=e_cor,
+                                chassi=e_chassi,
+                                km_atual=e_km,
+                                motorista_id=opcoes_motoristas.get(e_motorista),
+                                tipo_propriedade=e_tipo_propriedade,
+                                locadora=e_locadora,
+                                inicio_contrato=e_inicio_contrato,
+                                fim_contrato=e_fim_contrato,
+                                valor_mensal=e_valor_mensal,
+                                status=v_dados.get("status", "Disponível"),
                             )
                             st.success("Veículo atualizado com sucesso!")
                             st.rerun()
