@@ -127,3 +127,16 @@ def carregar_dados_dashboard():
         "df_manutencoes": df_manutencoes,
         "df_veiculos_completo": df_veiculos_completo,
     }
+conn = get_connection()
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+
+    # --- DIAGNÓSTICO TEMPORÁRIO (Pode ver no terminal/consola do VS Code) ---
+    print("--- COLUNAS DA TABELA MANUTENCOES ---")
+    cols_m = [info[1] for info in cursor.execute("PRAGMA table_info(manutencoes)").fetchall()]
+    print(cols_m)
+    print("--- DADOS DAS MANUTENCOES ---")
+    rows_m = cursor.execute("SELECT * FROM manutencoes").fetchall()
+    for r in rows_m:
+        print(dict(r))
+    # -----------------------------------------------------------------------
