@@ -35,7 +35,7 @@ st.set_page_config(
     initial_sidebar_state="auto",
 )
 
-# Estilização CSS para Mobile / App
+# Estilização CSS para Mobile / App e Correção da Sidebar (Gaveta Flutuante e Botão Fixo)
 st.markdown(
     """
     <style>
@@ -55,6 +55,31 @@ st.markdown(
         border-radius: 8px;
         height: 2.8em;
         font-weight: bold;
+    }
+
+    /* FORÇA O BOTÃO DE ABRIR/FECHAR A SIDEBAR A FICAR SEMPRE VISÍVEL E ACESSÍVEL */
+    [data-testid="collapsedControl"] {
+        display: block !important;
+        visibility: visible !important;
+        opacity: 1 !important;
+        z-index: 999999 !important;
+        position: fixed !important;
+        top: 10px !important;
+        left: 10px !important;
+        background-color: rgba(255, 255, 255, 0.9) !important;
+        border-radius: 50% !important;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.2) !important;
+    }
+
+    /* AJUSTE DA SIDEBAR PARA FUNCIONAR COMO GAVETA FLUTUANTE NO CELULAR/TELA ESTREITA */
+    @media (max-width: 992px) {
+        [data-testid="stSidebar"] {
+            position: fixed !important;
+            z-index: 999998 !important;
+            height: 100vh !important;
+            background-color: white !important;
+            box-shadow: 5px 0 15px rgba(0,0,0,0.1) !important;
+        }
     }
     </style>
     """,
