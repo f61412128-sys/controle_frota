@@ -137,6 +137,7 @@ def render_veiculos():
             )
             v_dados = opcoes_v[v_selecionado_str]
 
+            # SELETOR FORA DO FORMULÁRIO PARA REATIVIDADE INSTANTÂNEA DA LOCAÇÃO
             prop_atual = v_dados.get("tipo_propriedade") or "Próprio"
             v_tipo_propriedade = st.radio(
                 "Propriedade do Veículo",
@@ -368,6 +369,14 @@ def render_motoristas():
                 )
                 m_categoria = col5.selectbox("Categoria CNH", cats, index=idx_cat)
 
+                dt_val_cnh = datetime.date.today()
+                if m_dados.get("validade_cnh"):
+                    try:
+                        dt_val_cnh = datetime.date.fromisoformat(m_dados["validade_cnh"])
+                    except Exception:
+                        pass
+                m_validade_cnh = st.date_input("Validade CNH", value=dt_val_cnh)
+
                 m_status_opcoes = ["Ativo", "Inativo"]
                 idx_status = (
                     m_status_opcoes.index(m_dados["status"])
@@ -392,7 +401,7 @@ def render_motoristas():
                                 m_telefone,
                                 m_cnh,
                                 m_categoria,
-                                datetime.date.today(),
+                                m_validade_cnh,
                                 m_status,
                             )
                             st.success(
