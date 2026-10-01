@@ -72,9 +72,11 @@ except Exception as e:
     st.exception(e)
     st.stop()
 
-# --- SESSÃO / LOGIN COM PERSISTÊNCIA NA URL (ANTI-REFRESH) ---
+# --- TRATAMENTO DE LOGOFF / LIMPEZA DE URL ANTES DE CARREGAR A SESSÃO ---
+params = st.query_params
+
+# Se o utilizador clicou explicitamente em sair anteriormente, limpamos o estado
 if "logado" not in st.session_state:
-    params = st.query_params
     if params.get("logado") == "true":
         st.session_state["logado"] = True
         st.session_state["perfil"] = params.get("perfil", "motorista")
@@ -160,7 +162,9 @@ else:
         st.session_state["perfil"] = None
         st.session_state["usuario_nome"] = ""
         st.session_state["motorista_id"] = None
-        st.query_params.clear()  # Limpa os dados da URL no logout
+
+        # Limpa completamente os parâmetros da URL para evitar auto-login no refresh
+        st.query_params.clear()
         st.rerun()
 
     st.sidebar.divider()
