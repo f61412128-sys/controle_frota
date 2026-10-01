@@ -382,12 +382,12 @@ else:
                         f"{v['placa']} - {v['modelo']}": dict(v)
                         for v in veiculos
                     }
-                    v_dados = mapa_v[
-                        st.selectbox(
-                            "Selecione o Veículo para Editar",
-                            list(mapa_v.keys()),
-                        )
-                    ]
+                    v_selecionado = st.selectbox(
+                        "Selecione o Veículo para Editar",
+                        list(mapa_v.keys()),
+                        key="select_edit_veiculo",
+                    )
+                    v_dados = mapa_v[v_selecionado]
 
                     with st.form("form_editar_veiculo"):
                         c1, c2, c3 = st.columns(3)
@@ -411,12 +411,14 @@ else:
                             "Moto",
                             "Van",
                         ]
+                        tipo_atual_db = v_dados.get("tipo", "Passeio")
+                        idx_tipo = (
+                            tipos_list.index(tipo_atual_db)
+                            if tipo_atual_db in tipos_list
+                            else 0
+                        )
                         e_tipo = c5.selectbox(
-                            "Tipo",
-                            tipos_list,
-                            index=tipos_list.index(v_dados["tipo"])
-                            if v_dados["tipo"] in tipos_list
-                            else 0,
+                            "Tipo", tipos_list, index=idx_tipo
                         )
                         e_cor = c6.text_input(
                             "Cor", value=v_dados.get("cor", "")
@@ -449,8 +451,25 @@ else:
                         )
 
                         c11, c12, c13 = st.columns(3)
-                        e_inicio_contrato = c11.date_input("Início do Contrato")
-                        e_fim_contrato = c12.date_input("Fim do Contrato")
+
+                        def parse_data(val):
+                            if not val:
+                                return datetime.date.today()
+                            try:
+                                return datetime.datetime.strptime(
+                                    str(val).split()[0], "%Y-%m-%d"
+                                ).date()
+                            except Exception:
+                                return datetime.date.today()
+
+                        e_inicio_contrato = c11.date_input(
+                            "Início do Contrato",
+                            value=parse_data(v_dados.get("inicio_contrato")),
+                        )
+                        e_fim_contrato = c12.date_input(
+                            "Fim do Contrato",
+                            value=parse_data(v_dados.get("fim_contrato")),
+                        )
                         e_valor_mensal = c13.number_input(
                             "Valor Mensal (R$)",
                             min_value=0.0,
