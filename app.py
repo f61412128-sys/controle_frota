@@ -5,7 +5,6 @@ from pathlib import Path
 import sqlite3
 import sys
 
-# Adiciona a pasta atual ao caminho do Python
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 import pandas as pd
@@ -32,10 +31,10 @@ st.set_page_config(
     page_title="Controle de Frota",
     page_icon="🚚",
     layout="wide",
-    initial_sidebar_state="auto",
+    initial_sidebar_state="collapsed",
 )
 
-# Estilização CSS para Mobile / App e Correção da Sidebar
+# Estilização CSS geral e limpeza de layout
 st.markdown(
     """
     <style>
@@ -44,7 +43,7 @@ st.markdown(
     header {visibility: hidden;}
     
     .block-container {
-        padding-top: 0.5rem;
+        padding-top: 0.4rem;
         padding-bottom: 2rem;
         padding-left: 0.8rem;
         padding-right: 0.8rem;
@@ -55,14 +54,6 @@ st.markdown(
         border-radius: 8px;
         height: 2.8em;
         font-weight: bold;
-    }
-
-    /* Correção total para mobile: garante que a sidebar abra por cima e ocupe o espaço correto sem quebrar */
-    @media (max-width: 992px) {
-        section[data-testid="stSidebar"] {
-            width: 85vw !important;
-            z-index: 999999 !important;
-        }
     }
     </style>
     """,
@@ -115,7 +106,7 @@ if not st.session_state["logado"]:
                 st.error("Usuário ou senha incorretos.")
 
 else:
-    # Sidebar
+    # Sidebar apenas para Informações do Utilizador e Logout (Mantida limpa)
     LOGO_PATH = Path(__file__).parent / "nossoar.jpg"
     logo = (
         base64.b64encode(open(LOGO_PATH, "rb").read()).decode()
@@ -125,9 +116,9 @@ else:
 
     st.sidebar.markdown(
         f"""
-        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 15px;">
-            <img src="data:image/jpeg;base64,{logo}" style="height: 40px; width: auto;">
-            <span style="font-size: 18px; font-weight: bold;">Controle de Frota</span>
+        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
+            <img src="data:image/jpeg;base64,{logo}" style="height: 35px; width: auto;">
+            <span style="font-size: 16px; font-weight: bold;">Controle de Frota</span>
         </div>
         """,
         unsafe_allow_html=True,
@@ -149,22 +140,28 @@ else:
 
     # --- PERFIL MOTORISTA ---
     if st.session_state["perfil"] == "motorista":
-        st.sidebar.info("Modo Checklist (Celular)")
+        st.info("📱 Modo Checklist Ativo")
         render_checklist()
 
-    # --- PERFIL ADMINISTRADOR ---
+    # --- PERFIL ADMINISTRADOR (Com menu principal no topo para nunca sumir) ---
     elif st.session_state["perfil"] == "admin":
-        opcao = st.sidebar.radio(
-            "Navegação",
-            [
-                "Dashboard",
-                "Gestão de Usuários",
-                "Veículos",
-                "Motoristas",
-                "Checklist (Teste)",
-                "Manutenções",
-            ],
+        # Menu de navegação direto na tela principal (evita sumir no telemóvel)
+        opcoes_menu = [
+            "Dashboard",
+            "Gestão de Usuários",
+            "Veículos",
+            "Motoristas",
+            "Checklist (Teste)",
+            "Manutenções",
+        ]
+
+        # Caixa de seleção visível no topo da página
+        opcao = st.selectbox(
+            "📍 Selecione o Módulo do Sistema:",
+            opcoes_menu,
+            label_visibility="collapsed",
         )
+        st.markdown("---")
 
         if opcao == "Dashboard":
             render_dashboard(contar_registros)
@@ -312,7 +309,6 @@ else:
                     km_atual = c7.number_input("KM Atual", min_value=0, value=0)
                     chassi = c8.text_input("Chassi")
 
-                    # --- CAMPOS DE PROPRIEDADE ---
                     st.subheader("Informações de Propriedade")
                     c9, c10 = st.columns(2)
                     tipo_propriedade = c9.selectbox(
@@ -423,7 +419,6 @@ else:
                             "Chassi", value=v_dados.get("chassi", "")
                         )
 
-                        # --- EDITAR PROPRIEDADE ---
                         st.subheader("Informações de Propriedade")
                         c9, c10 = st.columns(2)
                         props_list = ["Próprio", "Alugado", "Terceirizado"]
