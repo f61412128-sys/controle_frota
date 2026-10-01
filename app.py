@@ -34,13 +34,17 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
-# Estilização CSS geral e limpeza de layout
+# Estilização CSS geral, limpeza de layout e bloqueio de pull-to-refresh indesejado no mobile
 st.markdown(
     """
     <style>
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
     header {visibility: hidden;}
+    
+    body {
+        overscroll-behavior-y: none;
+    }
     
     .block-container {
         padding-top: 0.4rem;
