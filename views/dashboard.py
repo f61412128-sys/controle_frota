@@ -11,17 +11,17 @@ def carregar_dados_dashboard():
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
 
-    # Contadores de veículos por tipo
+    # Contadores de veículos por tipo (usando LOWER para evitar divergências de acentos ou maiúsculas)
     qtd_veiculos = cursor.execute(
         "SELECT COUNT(*) FROM veiculos WHERE status != 'Inativo'"
     ).fetchone()[0]
 
     qtd_proprios = cursor.execute(
-        "SELECT COUNT(*) FROM veiculos WHERE status != 'Inativo' AND tipo_propriedade = 'Próprio'"
+        "SELECT COUNT(*) FROM veiculos WHERE status != 'Inativo' AND LOWER(tipo_propriedade) LIKE 'próprio%'"
     ).fetchone()[0]
 
     qtd_alugados = cursor.execute(
-        "SELECT COUNT(*) FROM veiculos WHERE status != 'Inativo' AND tipo_propriedade IN ('Alugado', 'Terceirizado')"
+        "SELECT COUNT(*) FROM veiculos WHERE status != 'Inativo' AND (LOWER(tipo_propriedade) LIKE 'alugado%' OR LOWER(tipo_propriedade) LIKE 'terceirizado%')"
     ).fetchone()[0]
 
     # Contadores de motoristas e manutenções
@@ -101,9 +101,9 @@ def carregar_dados_dashboard():
     qtd_contratos_atencao = 0
     if not df_veiculos_completo.empty:
         df_alug = df_veiculos_completo[
-            df_veiculos_completo["tipo_propriedade"].isin(
-                ["Alugado", "Terceirizado"]
-            )
+            df_veiculos_completo["tipo_propriedade"]
+            .str.lower()
+            .str.contains("alugado|terceirizado", na=False)
         ]
         if not df_alug.empty:
             hoje = datetime.date.today()
@@ -171,7 +171,7 @@ def render_dashboard(contar_registros_fn=None):
         "📄 Gestão de Contratos & Frota",
         "🚘 Rodízio Hoje",
         "🛠️ Manutenções Recentes",
-        "⚠️️ Ocorrências & Defeitos",
+        "⚠ Ocorrências & Defeitos",
         "📊 Stats Banco",
     ])
 
@@ -181,9 +181,15 @@ def render_dashboard(contar_registros_fn=None):
         df_v = dados["df_veiculos_completo"]
 
         if not df_v.empty:
-            df_proprios = df_v[df_v["tipo_propriedade"] == "Próprio"]
+            df_proprios = df_v[
+                df_v["tipo_propriedade"]
+                .str.lower()
+                .str.contains("próprio", na=False)
+            ]
             df_alugados = df_v[
-                df_v["tipo_propriedade"].isin(["Alugado", "Terceirizado"])
+                df_v["tipo_propriedade"]
+                .str.lower()
+                .str.contains("alugado|terceirizado", na=False)
             ]
 
             # Alertas de Vencimento de Aluguel
@@ -350,7 +356,7 @@ def render_dashboard(contar_registros_fn=None):
         except Exception:
             st.info("Nenhuma ocorrência registrada.")
 
-    # ABA 5: STATS DO BANCO (FORMATO VISUAL FORMATADO)
+    # ABA 5: STATS DO BANCO
     with tab_stats:
         st.markdown("##### 🗄️ Total de Registros no Banco de Dados")
         if contar_registros_fn:
@@ -364,8 +370,8 @@ def render_dashboard(contar_registros_fn=None):
 
             st.write("")
             c5, c6, c7, c8 = st.columns(4)
-            c5.metric("🛠️️ Manutenções", stats.get("manutencoes", 0))
-            c6.metric("⚠️️ Ocorrências", stats.get("ocorrencias", 0))
+            c5.metric("🛠 Manutenções", stats.get("manutencoes", 0))
+            c6.metric("⚠ Ocorrências", stats.get("ocorrencias", 0))
             c7.metric("📝 Itens Checklist", stats.get("itens_checklist", 0))
         else:
             st.info("Informações estatísticas do banco indisponíveis.")
