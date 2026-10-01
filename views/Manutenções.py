@@ -5,10 +5,11 @@ from views.services.cadastros_service import listar_veiculos
 
 
 def garantir_tabela_manutencoes():
-    """Garante que a tabela manutencoes existe com todas as colunas necessárias."""
+    """Garante que a tabela manutencoes existe e possui todas as colunas necessárias."""
     conn = get_connection()
     try:
         cursor = conn.cursor()
+        # 1. Cria a tabela caso ela não exista de todo
         cursor.execute(
             """
             CREATE TABLE IF NOT EXISTS manutencoes (
@@ -26,9 +27,29 @@ def garantir_tabela_manutencoes():
             )
         """
         )
+        
+        # 2. Garante que colunas adicionadas recentemente existam em bases de dados antigas
+        cursor.execute("PRAGMA table_info(manutencoes)")
+        colunas_existentes = [col[1] for col in cursor.fetchall()]
+
+        colunas_necessarias = {
+            "tipo": "TEXT",
+            "status": "TEXT",
+            "problema": "TEXT",
+            "oficina": "TEXT",
+            "km": "REAL",
+            "valor": "REAL",
+            "data_entrada": "TEXT",
+            "proximo_km": "REAL"
+        }
+
+        for coluna, tipo_dado in colunas_necessarias.items():
+            if coluna not in colunas_existentes:
+                cursor.execute(f"ALTER TABLE manutencoes ADD COLUMN {coluna} {tipo_dado}")
+
         conn.commit()
     except Exception as e:
-        print(f"Erro ao criar tabela de manutenções: {e}")
+        print(f"Erro ao atualizar/criar tabela de manutenções: {e}")
     finally:
         conn.close()
 
