@@ -131,39 +131,23 @@ if not st.session_state["logado"]:
                 st.error("Usuário ou senha incorretos.")
 
 else:
-    LOGO_PATH = Path(__file__).parent / "nossoar.jpg"
-    logo = (
-        base64.b64encode(open(LOGO_PATH, "rb").read()).decode()
-        if LOGO_PATH.exists()
-        else ""
-    )
+    # --- CABEÇALHO SUPERIOR FIXO PARA O TELEMÓVEL (MENU + LOGOUT) ---
+    c_topo1, c_topo2 = st.columns([3, 1])
+    with c_topo1:
+        st.caption(
+            f"👤 **{st.session_state['usuario_nome']}** "
+            f"({st.session_state['perfil'].upper()})"
+        )
+    with c_topo2:
+        if st.button("🚪 Sair", use_container_width=True):
+            st.session_state["logado"] = False
+            st.session_state["perfil"] = None
+            st.session_state["usuario_nome"] = ""
+            st.session_state["motorista_id"] = None
+            st.query_params.clear()
+            st.rerun()
 
-    st.sidebar.markdown(
-        f"""
-        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
-            <img src="data:image/jpeg;base64,{logo}" style="height: 35px; width: auto;">
-            <span style="font-size: 16px; font-weight: bold;">Controle de Frota</span>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    st.sidebar.write(
-        f"👤 **{st.session_state['usuario_nome']}** "
-        f"({st.session_state['perfil'].upper()})"
-    )
-
-    if st.sidebar.button("🚪 Sair / Logout", use_container_width=True):
-        st.session_state["logado"] = False
-        st.session_state["perfil"] = None
-        st.session_state["usuario_nome"] = ""
-        st.session_state["motorista_id"] = None
-
-        # Limpeza absoluta da URL e reset de parâmetros para permitir logout real
-        st.query_params.clear()
-        st.rerun()
-
-    st.sidebar.divider()
+    st.divider()
 
     # --- PERFIL MOTORISTA ---
     if st.session_state["perfil"] == "motorista":
