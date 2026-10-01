@@ -452,7 +452,7 @@ else:
 
         # --- TELA: MOTORISTAS ---
         elif opcao == "Motoristas":
-            st.title("👨‍‍✈ Gestão de Motoristas")
+            st.title("👨‍✈ Gestão de Motoristas")
             tab_listar, tab_cadastrar, tab_editar = st.tabs([
                 "📋 Listar Motoristas",
                 "➕ Cadastrar Motorista",
