@@ -84,71 +84,69 @@ def render_cards_veiculos_estilizados(df_veiculos):
         """, unsafe_allow_html=True)
 
 
-def fetch_table_postgres_safe(query, params=None):
+def ler_tabela_direta(query):
+    conn = get_connection()
     try:
-        conn = get_connection()
         cursor = conn.cursor()
-        cursor.execute(query, params or ())
+        cursor.execute(query)
         rows = cursor.fetchall()
         if rows:
-            columns = [desc[0] for desc in cursor.description]
-            df = pd.DataFrame(rows, columns=columns)
+            cols = [desc[0] for desc in cursor.description]
+            df = pd.DataFrame(rows, columns=cols)
         else:
             df = pd.DataFrame()
         cursor.close()
         conn.close()
         return df
     except Exception as e:
-        st.error(f"Erro ao executar query ({query}): {e}")
+        st.error(f"Erro ao consultar BD: {e}")
+        conn.close()
         return pd.DataFrame()
 
 
 def render_dashboard(contar_registros_fn=None):
-    st.title("📊 Painel Geral (Frota)")
+    st.title("📊 Painel Geral (Versão Direta)")
 
-    df_veiculos = fetch_table_postgres_safe("SELECT * FROM veiculos")
-    df_manutencoes = fetch_table_postgres_safe("SELECT * FROM manutencoes")
-    df_motoristas = fetch_table_postgres_safe("SELECT * FROM motoristas")
+    # Consultas diretas às tabelas conhecidas do PostgreSQL
+    df_veiculos = ler_tabela_direta("SELECT * FROM veiculos")
+    df_manutencoes = ler_tabela_direta("SELECT * FROM manutencoes")
+    df_motoristas = ler_tabela_direta("SELECT * FROM motoristas")
+    df_checklists = ler_tabela_direta("SELECT * FROM checklists")
     
-    # Leitura direta e forçada da tabela checklists detetada
-    df_checklists = fetch_table_postgres_safe("SELECT * FROM checklists")
-
     df_contratos = pd.DataFrame()
     for t in ['contratos', 'vencimento_contratos']:
-        df_temp = fetch_table_postgres_safe(f"SELECT * FROM {t}")
-        if not df_temp.empty:
-            df_contratos = df_temp
+        df_t = ler_tabela_direta(f"SELECT * FROM {t}")
+        if not df_t.empty:
+            df_contratos = df_t
             break
 
-    # Cruzamento inteligente dos checklists com os veículos
+    # Cruzamento de checklists com os veículos
     if not df_veiculos.empty:
         status_list = []
         resp_list = []
 
         for _, v_row in df_veiculos.iterrows():
             p_val = str(v_row.get('placa', '')).strip().upper()
-            v_id = str(v_row.get('id', ''))
-
+            
             df_chk_veiculo = pd.DataFrame()
             if not df_checklists.empty:
+                # Procura por colunas comuns que armazenam a placa
                 col_encontrada = None
-                for c in ['placa', 'veiculo_placa', 'veiculo_id', 'id_veiculo', 'veiculo']:
+                for c in ['placa', 'veiculo_placa', 'veiculo', 'veiculo_id']:
                     if c in df_checklists.columns:
                         col_encontrada = c
                         break
                 
                 if col_encontrada:
-                    mask = (
-                        (df_checklists[col_encontrada].astype(str).str.strip().str.upper() == p_val) | 
-                        (df_checklists[col_encontrada].astype(str).str.strip() == v_id)
-                    )
+                    mask = df_checklists[col_encontrada].astype(str).str.strip().str.upper() == p_val
                     df_chk_veiculo = df_checklists[mask]
                 else:
                     df_chk_veiculo = df_checklists
 
             if not df_chk_veiculo.empty:
+                # Ordenar pela data mais recente se houver coluna de data
                 col_data = None
-                for c in ['data', 'data_checklist', 'created_at', 'data_hora', 'id', 'timestamp']:
+                for c in ['data', 'data_checklist', 'created_at', 'data_hora', 'timestamp']:
                     if c in df_chk_veiculo.columns:
                         col_data = c
                         break
@@ -162,13 +160,12 @@ def render_dashboard(contar_registros_fn=None):
                 ult_chk = df_chk_veiculo.iloc[0]
 
                 resp = "Desconhecido"
-                for c_resp in ['usuario', 'responsavel', 'motorista', 'nome', 'criado_por', 'adm', 'user', 'operador']:
+                for c_resp in ['usuario', 'responsavel', 'motorista', 'nome', 'criado_por', 'adm', 'user']:
                     if c_resp in ult_chk and pd.notna(ult_chk[c_resp]):
                         resp = str(ult_chk[c_resp])
                         break
 
-                resp_lower = resp.lower()
-                is_adm = any(termo in resp_lower for termo in ['adm', 'administrador', 'admin', 'gestor'])
+                is_adm = any(termo in resp.lower() for termo in ['adm', 'administrador', 'admin', 'gestor'])
 
                 if is_adm:
                     status_list.append("Disponível")
@@ -205,17 +202,6 @@ def render_dashboard(contar_registros_fn=None):
                     pass
 
     total_contratos_venc = len(df_contratos)
-    if not df_contratos.empty:
-        for col_dt in ['vencimento', 'data_fim', 'fim_contrato', 'data_vencimento']:
-            if col_dt in df_contratos.columns:
-                try:
-                    dt_venc = pd.to_datetime(df_contratos[col_dt], errors='coerce')
-                    hoje = pd.Timestamp.today()
-                    proximos = df_contratos[(dt_venc >= hoje) & (dt_venc <= hoje + pd.Timedelta(days=30))]
-                    total_contratos_venc = len(proximos)
-                    break
-                except Exception:
-                    pass
 
     df_alugados = pd.DataFrame()
     df_proprios = pd.DataFrame()
@@ -230,12 +216,7 @@ def render_dashboard(contar_registros_fn=None):
         if col_alvo:
             mask_alug = df_veiculos[col_alvo].astype(str).str.lower().str.contains("alugado|terceirizado|locado|terceiro", na=False)
             df_alugados = df_veiculos[mask_alug].copy()
-            
-            mask_prop = df_veiculos[col_alvo].astype(str).str.lower().str.contains("próprio|proprio", na=False)
-            df_proprios = df_veiculos[mask_prop].copy()
-            
-            if df_proprios.empty:
-                df_proprios = df_veiculos[~mask_alug].copy()
+            df_proprios = df_veiculos[~mask_alug].copy()
         else:
             df_proprios = df_veiculos.copy()
 
@@ -245,7 +226,7 @@ def render_dashboard(contar_registros_fn=None):
     total_motoristas = len(df_motoristas) if not df_motoristas.empty else 0
     total_manut = len(df_manutencoes)
 
-    # Métricas Superiores
+    # Métricas
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("🚚 Frota Total", total_veiculos)
     c2.metric("🏢 Próprios", total_proprios)
@@ -256,9 +237,7 @@ def render_dashboard(contar_registros_fn=None):
     c5.metric("💰 Custo Manutenções", f"R$ {custo_total_manut:,.2f}")
     c6.metric("👨‍✈️ Motoristas", total_motoristas)
     c7.metric("⚠ Ocorrências", 0)
-    
-    delta_contrato = "Atenção" if total_contratos_venc > 0 else "OK"
-    c8.metric("📄 Venc. Contratos", total_contratos_venc, delta=delta_contrato, delta_color="inverse" if total_contratos_venc > 0 else "normal")
+    c8.metric("📄 Venc. Contratos", total_contratos_venc)
 
     st.divider()
 
@@ -271,13 +250,9 @@ def render_dashboard(contar_registros_fn=None):
 
     with tab_contratos:
         sub_alug, sub_prop = st.tabs(["📋 Alugados / Terceirizados", "🏢 Próprios"])
-
         with sub_alug:
-            st.markdown("##### Veículos Alugados / Terceirizados")
             render_cards_veiculos_estilizados(df_alugados)
-
         with sub_prop:
-            st.markdown("##### Veículos Próprios")
             render_cards_veiculos_estilizados(df_proprios)
 
     with tab_rodizio:
@@ -298,10 +273,10 @@ def render_dashboard(contar_registros_fn=None):
     with tab_pendencias:
         st.success("Nenhuma ocorrência pendente!")
 
-    # Diagnóstico final para conferir os dados da tabela checklists
-    with st.expander("🛠 Diagnóstico da Tabela Checklists", expanded=True):
-        st.write(f"**Total de registos carregados na tabela `checklists`:** {len(df_checklists)}")
+    # Caixa de Diagnóstico Direta
+    with st.expander("🛠 Diagnóstico Direto da Tabela Checklists", expanded=True):
+        st.write(f"**Total de registos na tabela `checklists`:** {len(df_checklists)}")
         if not df_checklists.empty:
             st.dataframe(df_checklists, use_container_width=True)
         else:
-            st.warning("A tabela `checklists` está atualmente sem registos na base de dados.")
+            st.warning("A tabela `checklists` está vazia na base de dados PostgreSQL.")
