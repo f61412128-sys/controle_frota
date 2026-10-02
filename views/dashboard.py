@@ -67,7 +67,7 @@ def carregar_dados_dashboard():
     # Veículos completo
     try:
         df_veiculos_completo = pd.read_sql_query(
-            "SELECT placa, marca, modelo, tipo_propriedade, locadora, inicio_contrato, fim_contrato, valor_mensal FROM veiculos WHERE status != 'Inativo'",
+            "SELECT placa, marca, modelo, tipo_propriedade, locadora, inicio_contrato, fim_contrato, valor_mensal, status FROM veiculos WHERE status != 'Inativo'",
             conn,
         )
     except Exception:
@@ -119,32 +119,172 @@ def carregar_dados_dashboard():
     }
 
 
+def render_cards_veiculos(df_veiculos):
+    """Renderiza a lista de veículos em formato de cards modernos (Mobile-First)"""
+    if df_veiculos.empty:
+        st.info("Nenhum veículo registado para exibir.")
+        return
+
+    # Estilo CSS customizado para os cartões de veículos (Tema Dark NOSSOAR)
+    st.markdown("""
+        <style>
+        .veiculo-card {
+            background-color: #111827;
+            border: 1px solid #1f2937;
+            border-left: 4px solid #3b82f6;
+            padding: 14px;
+            border-radius: 10px;
+            margin-bottom: 12px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+        }
+        .veiculo-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+        .veiculo-placa {
+            font-size: 16px;
+            font-weight: bold;
+            color: #ffffff;
+            letter-spacing: 1px;
+        }
+        .veiculo-status-ativo {
+            background-color: #064e3b;
+            color: #34d399;
+            padding: 2px 8px;
+            border-radius: 6px;
+            font-size: 11px;
+            font-weight: bold;
+        }
+        .veiculo-status-manu {
+            background-color: #78350f;
+            color: #fbbf24;
+            padding: 2px 8px;
+            border-radius: 6px;
+            font-size: 11px;
+            font-weight: bold;
+        }
+        .veiculo-info {
+            font-size: 13px;
+            color: #9ca3af;
+            margin-bottom: 4px;
+        }
+        .veiculo-info span {
+            color: #f3f4f6;
+            font-weight: 500;
+        }
+        </style>
+    """, unsafe_allow_html=True)
+
+    for index, row in df_veiculos.iterrows():
+        placa = row.get('placa', 'N/A')
+        marca = row.get('marca', '')
+        modelo = row.get('modelo', '')
+        tipo = row.get('tipo_propriedade', 'N/A')
+        status = row.get('status', 'Ativo')
+        locadora = row.get('locadora', '-')
+
+        badge_class = "veiculo-status-ativo" if str(status).lower() == "ativo" else "veiculo-status-manu"
+
+        st.markdown(f"""
+            <div class="veiculo-card">
+                <div class="veiculo-header">
+                    <span class="veiculo-placa">🚗 {placa}</span>
+                    <span class="{badge_class}">{status}</span>
+                </div>
+                <div class="veiculo-info">Modelo: <span>{marca} {modelo}</span></div>
+                <div class="veiculo-info">Tipo: <span>{tipo}</span></div>
+                <div class="veiculo-info">Locadora: <span>{locadora if locadora and str(locadora) != 'nan' else 'N/A'}</span></div>
+            </div>
+        """, unsafe_allow_html=True)
+
+        if st.button(f"🔍 Ver detalhes de {placa}", key=f"btn_detalhe_{placa}_{index}"):
+            st.toast(f"A abrir detalhes do veículo {placa}...")
+
+
 def render_dashboard(contar_registros_fn=None):
-    st.title("📊 Painel Geral")
+    # Injeção de CSS global para o Painel Geral
+    st.markdown("""
+        <style>
+        .welcome-banner {
+            background: linear-gradient(90deg, #1e1b4b 0%, #172554 100%);
+            border: 1px solid #1e3a8a;
+            padding: 16px 20px;
+            border-radius: 12px;
+            color: #ffffff;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+        }
+        .welcome-title {
+            font-size: 20px;
+            font-weight: bold;
+            color: #60a5fa;
+        }
+        .welcome-subtitle {
+            font-size: 13px;
+            color: #94a3b8;
+            margin-top: 2px;
+        }
+        .metric-card {
+            background-color: #111827;
+            border: 1px solid #1f2937;
+            padding: 14px;
+            border-radius: 10px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            margin-bottom: 10px;
+        }
+        .metric-label {
+            font-size: 11px;
+            color: #9ca3af;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .metric-value {
+            font-size: 20px;
+            font-weight: bold;
+            color: #ffffff;
+            margin-top: 4px;
+        }
+        </style>
+    """, unsafe_allow_html=True)
+
+    st.markdown("""
+        <div class="welcome-banner">
+            <div class="welcome-title">Olá, Administrador!</div>
+            <div class="welcome-subtitle">Painel de controlo NOSSOAR.</div>
+        </div>
+    """, unsafe_allow_html=True)
 
     dados = carregar_dados_dashboard()
 
-    # --- MÉTRICAS ---
+    # --- MÉTRICAS SUPERIORES ---
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("🚚 Frota Total", dados["veiculos"])
-    c2.metric("🏢 Próprios", dados["proprios"])
-    c3.metric("📋 Alugados", dados["alugados"])
-    c4.metric("🛠️ Em Manutenção", dados["manut_andamento"])
+    with c1:
+        st.markdown(f'<div class="metric-card"><div class="metric-label">🚚 Frota</div><div class="metric-value">{dados["veiculos"]}</div></div>', unsafe_allow_html=True)
+    with c2:
+        st.markdown(f'<div class="metric-card"><div class="metric-label">🚙 Próprios</div><div class="metric-value">{dados["proprios"]}</div></div>', unsafe_allow_html=True)
+    with c3:
+        st.markdown(f'<div class="metric-card"><div class="metric-label">🏢 Alugados</div><div class="metric-value">{dados["alugados"]}</div></div>', unsafe_allow_html=True)
+    with c4:
+        st.markdown(f'<div class="metric-card"><div class="metric-label">🛠️ Manut.</div><div class="metric-value" style="color: #60a5fa;">{dados["manut_andamento"]}</div></div>', unsafe_allow_html=True)
 
     c5, c6, c7, c8 = st.columns(4)
-    c5.metric("💰 Custo Manutenções", f"R$ {dados['custo_total']:,.2f}")
-    c6.metric("👨‍✈️ Motoristas", dados["motoristas"])
-    c7.metric("⚠ Ocorrências", dados["pendencias"])
-    c8.metric(
-        "📄 Venc. Contratos",
-        dados["contratos_atencao"],
-        delta="Atenção" if dados["contratos_atencao"] > 0 else "OK",
-        delta_color="inverse" if dados["contratos_atencao"] > 0 else "normal",
-    )
+    with c5:
+        st.markdown(f'<div class="metric-card"><div class="metric-label">💰 Custo</div><div class="metric-value" style="font-size: 14px; color: #34d399;">R$ {dados['custo_total']:,.2f}</div></div>', unsafe_allow_html=True)
+    with c6:
+        st.markdown(f'<div class="metric-card"><div class="metric-label">👨‍‍✈️ Motoristas</div><div class="metric-value">{dados["motoristas"]}</div></div>', unsafe_allow_html=True)
+    with c7:
+        st.markdown(f'<div class="metric-card"><div class="metric-label">⚠ Ocorrências</div><div class="metric-value" style="color: #f87171;">{dados["pendencias"]}</div></div>', unsafe_allow_html=True)
+    with c8:
+        cor_contrato = "#fbbf24" if dados["contratos_atencao"] > 0 else "#34d399"
+        status_txt = f"Atenção ({dados['contratos_atencao']})" if dados["contratos_atencao"] > 0 else "OK"
+        st.markdown(f'<div class="metric-card"><div class="metric-label">📄 Contratos</div><div class="metric-value" style="font-size: 14px; color: {cor_contrato};">{status_txt}</div></div>', unsafe_allow_html=True)
 
     st.divider()
 
-    # Abas
+    # Abas da Aplicação
     tab_contratos, tab_rodizio, tab_manut, tab_pendencias = st.tabs([
         "📄 Gestão de Contratos & Frota",
         "🚘 Rodízio Hoje",
@@ -161,12 +301,14 @@ def render_dashboard(contar_registros_fn=None):
             sub1, sub2 = st.tabs(["📋 Alugados / Terceirizados", "🏢 Próprios"])
             with sub1:
                 if not df_alugados.empty:
-                    st.dataframe(df_alugados, use_container_width=True, hide_index=True)
+                    # APLICADO O NOVO SISTEMA DE CARDS TOCÁVEIS AQUI!
+                    render_cards_veiculos(df_alugados)
                 else:
                     st.info("Nenhum veículo alugado encontrado.")
             with sub2:
                 if not df_proprios.empty:
-                    st.dataframe(df_proprios, use_container_width=True, hide_index=True)
+                    # APLICADO O NOVO SISTEMA DE CARDS TOCÁVEIS AQUI!
+                    render_cards_veiculos(df_proprios)
                 else:
                     st.info("Nenhum veículo próprio encontrado.")
         else:
