@@ -67,15 +67,24 @@ def salvar_checklist(
             except Exception:
                 pass
 
+        # Valida se existe coluna de foto na tabela checklists
+        if "foto" not in colunas_chk:
+            try:
+                cursor.execute(
+                    "ALTER TABLE checklists ADD COLUMN foto BLOB"
+                )
+            except Exception:
+                pass
+
         # 1. Determina resultado geral
         tem_pendencia = any(res == "NÃO OK" for res in itens_respostas.values())
         resultado_geral = "Com pendências" if tem_pendencia else "Aprovado"
 
-        # 2. Salva o Checklist com o endereço amigável
+        # 2. Salva o Checklist com o endereço amigável e a foto (se houver)
         cursor.execute(
             """
-            INSERT INTO checklists (veiculo_id, motorista_id, km, resultado, observacoes, localizacao)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO checklists (veiculo_id, motorista_id, km, resultado, observacoes, localizacao, foto)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 veiculo_id,
@@ -84,6 +93,7 @@ def salvar_checklist(
                 resultado_geral,
                 observacoes,
                 localizacao_amigavel,
+                foto_bytes,
             ),
         )
         checklist_id = cursor.lastrowid
