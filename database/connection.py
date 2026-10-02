@@ -5,11 +5,9 @@ import streamlit as st
 
 
 def get_connection():
-    # Tenta ler do secrets do Streamlit Cloud ou da variável de ambiente local
-    database_url = (
-        st.secrets["DATABASE_URL"]
-        if "DATABASE_URL" in st.secrets
-        else os.getenv("DATABASE_URL")
-    )
-    # Retorna uma conexão com dicionário ativado (DictCursor) para facilitar o acesso por nome de coluna
+    try:
+        database_url = st.secrets["DATABASE_URL"]
+    except Exception:
+        database_url = os.getenv("DATABASE_URL")
+
     return psycopg2.connect(database_url, cursor_factory=psycopg2.extras.DictCursor)
