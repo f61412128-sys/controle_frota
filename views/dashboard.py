@@ -165,7 +165,7 @@ def render_dashboard(contar_registros_fn=None):
 
                 ult_chk = df_chk_veiculo.iloc[0]
 
-                # Tenta descobrir o responsável (procurando em motoristas, usuarios ou colunas de texto direto)
+                # Tenta descobrir o responsável
                 resp = "Administrador / Sistema"
                 for col_resp in ['responsavel', 'usuario_responsavel', 'nome_responsavel']:
                     if col_resp in ult_chk and pd.notna(ult_chk[col_resp]):
@@ -173,7 +173,6 @@ def render_dashboard(contar_registros_fn=None):
                         break
                 
                 if resp == "Administrador / Sistema" or resp.isdigit():
-                    # Tenta procurar por IDs (usuario_id, motorista_id, admin_id)
                     for id_col in ['usuario_id', 'admin_id', 'criado_por_id']:
                         if id_col in ult_chk and pd.notna(ult_chk[id_col]) and not df_usuarios.empty and 'id' in df_usuarios.columns:
                             u_match = df_usuarios[df_usuarios['id'] == ult_chk[id_col]]
@@ -201,7 +200,6 @@ def render_dashboard(contar_registros_fn=None):
                 elif any(k in tipo_mov_lower for k in ['entrada', 'devolucao', 'devolução', 'retorno', 'chegada']):
                     status_disp = "Disponível"
                 else:
-                    # Comportamento padrão se não especificado explicitamente
                     status_disp = "Disponível"
 
                 status_list.append(status_disp)
@@ -220,7 +218,7 @@ def render_dashboard(contar_registros_fn=None):
         df_veiculos['ultimo_responsavel'] = "N/A"
         df_veiculos['ultimo_tipo_movimento'] = ""
 
-    # Métricas e separação de alugados / próprios
+    # Cálculo do Custo de Manutenções
     custo_total_manut = 0.0
     if not df_manutencoes.empty:
         for col_val in ['valor', 'custo', 'preco', 'valor_total']:
@@ -237,6 +235,45 @@ def render_dashboard(contar_registros_fn=None):
                     break
                 except Exception:
                     pass
+
+    # Cálculo dinâmico de Contratos a Vencer / Vencidos
+    total_venc_contratos = 0
+    df_contratos = pd.DataFrame()
+    for t_c in ['contratos', 'locacoes', 'gestao_contratos']:
+        if t_c in tabelas_existentes:
+            df_temp = ler_tabela_direta(f"SELECT * FROM {t_c}")
+            if not df_temp.empty:
+                df_contratos = df_temp
+                break
+
+    if not df_contratos.empty:
+        col_venc = None
+        for c in ['data_fim', 'vencimento', 'termino_contrato', 'data_termino', 'vencimento_contrato']:
+            if c in df_contratos.columns:
+                col_venc = c
+                break
+        if col_venc:
+            try:
+                hoje = pd.Timestamp.now().normalize()
+                datas_venc = pd.to_datetime(df_contratos[col_venc], errors='coerce')
+                limite = hoje + pd.Timedelta(days=30)
+                total_venc_contratos = int(((datas_venc >= hoje) & (datas_venc <= limite)).sum() + (datas_venc < hoje).sum())
+            except Exception:
+                pass
+    elif not df_veiculos.empty:
+        col_venc_v = None
+        for c in ['vencimento_contrato', 'data_fim_contrato', 'fim_contrato', 'vencimento']:
+            if c in df_veiculos.columns:
+                col_venc_v = c
+                break
+        if col_venc_v:
+            try:
+                hoje = pd.Timestamp.now().normalize()
+                datas_venc = pd.to_datetime(df_veiculos[col_venc_v], errors='coerce')
+                limite = hoje + pd.Timedelta(days=30)
+                total_venc_contratos = int(((datas_venc >= hoje) & (datas_venc <= limite)).sum() + (datas_venc < hoje).sum())
+            except Exception:
+                pass
 
     df_alugados = pd.DataFrame()
     df_proprios = pd.DataFrame()
@@ -271,7 +308,7 @@ def render_dashboard(contar_registros_fn=None):
     c5.metric("💰 Custo Manutenções", f"R$ {custo_total_manut:,.2f}")
     c6.metric("👨‍✈️ Motoristas", total_motoristas)
     c7.metric("⚠ Ocorrências", 0)
-    c8.metric("📄 Venc. Contratos", 0)
+    c8.metric("📄 Venc. Contratos", total_venc_contratos)
 
     st.divider()
 
