@@ -627,7 +627,7 @@ else:
                             st.success("Motorista atualizado!")
                             st.rerun()
 
-        elif opcao == "Checklist (Teste)":
+        elif opcao == "Checklist":
             render_checklist()
 
         elif opcao == "Manutenções":
