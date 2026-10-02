@@ -118,14 +118,12 @@ def render_dashboard(contar_registros_fn=None):
     df_usuarios = ler_tabela_direta("SELECT * FROM usuarios") if 'usuarios' in tabelas_existentes else pd.DataFrame()
 
     df_checklists = pd.DataFrame()
-    tabela_checklists_encontrada = "Nenhuma"
     
     for t in ['checklists', 'checklist', 'historico_checklists', 'inspecoes']:
         if t in tabelas_existentes:
             df_temp = ler_tabela_direta(f"SELECT * FROM {t}")
             if not df_temp.empty:
                 df_checklists = df_temp
-                tabela_checklists_encontrada = t
                 break
 
     if df_checklists.empty:
@@ -133,7 +131,6 @@ def render_dashboard(contar_registros_fn=None):
             df_temp = ler_tabela_direta(f"SELECT * FROM {t}")
             if not df_temp.empty and any(k in t.lower() for k in ['check', 'insp', 'vist']):
                 df_checklists = df_temp
-                tabela_checklists_encontrada = t
                 break
 
     # Cruzamento inteligente de checklists (Entrada/Saída e Responsável/Admin)
@@ -343,10 +340,3 @@ def render_dashboard(contar_registros_fn=None):
 
     with tab_pendencias:
         st.success("Nenhuma ocorrência pendente!")
-
-    with st.expander("🛠 Diagnóstico de Tabelas e Registos", expanded=False):
-        st.write(f"**Tabelas detetadas no PostgreSQL:** {tabelas_existentes}")
-        st.write(f"**Tabela de checklists identificada:** `{tabela_checklists_encontrada}`")
-        st.write(f"**Total de registos encontrados:** {len(df_checklists)}")
-        if not df_checklists.empty:
-            st.dataframe(df_checklists.head(5), use_container_width=True)
