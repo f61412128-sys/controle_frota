@@ -110,12 +110,12 @@ def render_dashboard(contar_registros_fn=None):
     df_tables = ler_tabela_direta("SELECT table_name FROM information_schema.tables WHERE table_schema='public';")
     tabelas_existentes = df_tables['table_name'].tolist() if not df_tables.empty else []
 
-    # Carregar veículos e manutenções
+    # Carregar veículos, manutenções e motoristas
     df_veiculos = ler_tabela_direta("SELECT * FROM veiculos") if 'veiculos' in tabelas_existentes else pd.DataFrame()
     df_manutencoes = ler_tabela_direta("SELECT * FROM manutencoes") if 'manutencoes' in tabelas_existentes else pd.DataFrame()
     df_motoristas = ler_tabela_direta("SELECT * FROM motoristas") if 'motoristas' in tabelas_existentes else pd.DataFrame()
 
-    # Procurar automaticamente qual tabela armazena os checklists/inspeções
+    # Carregar tabela de checklists
     df_checklists = pd.DataFrame()
     tabela_checklists_encontrada = "Nenhuma"
     
@@ -128,7 +128,6 @@ def render_dashboard(contar_registros_fn=None):
                 tabela_checklists_encontrada = t
                 break
     
-    # Se nenhuma das conhecidas tiver dados, tenta a primeira que tiver registos
     if df_checklists.empty:
         for t in tabelas_existentes:
             df_temp = ler_tabela_direta(f"SELECT * FROM {t}")
@@ -137,31 +136,22 @@ def render_dashboard(contar_registros_fn=None):
                 tabela_checklists_encontrada = t
                 break
 
-    # Cruzamento de checklists com os veículos
+    # Cruzamento corrigido de checklists com os veículos usando 'veiculo_id' e 'data_hora'
     if not df_veiculos.empty:
         status_list = []
         resp_list = []
 
         for _, v_row in df_veiculos.iterrows():
-            p_val = str(v_row.get('placa', '')).strip().upper()
+            v_id = v_row.get('id')
             
             df_chk_veiculo = pd.DataFrame()
-            if not df_checklists.empty:
-                col_encontrada = None
-                for c in ['placa', 'veiculo_placa', 'veiculo', 'veiculo_id']:
-                    if c in df_checklists.columns:
-                        col_encontrada = c
-                        break
-                
-                if col_encontrada:
-                    mask = df_checklists[col_encontrada].astype(str).str.strip().str.upper() == p_val
-                    df_chk_veiculo = df_checklists[mask]
-                else:
-                    df_chk_veiculo = df_checklists
+            if not df_checklists.empty and 'veiculo_id' in df_checklists.columns and v_id is not None:
+                mask = df_checklists['veiculo_id'] == v_id
+                df_chk_veiculo = df_checklists[mask]
 
             if not df_chk_veiculo.empty:
                 col_data = None
-                for c in ['data', 'data_checklist', 'created_at', 'data_hora', 'timestamp']:
+                for c in ['data_hora', 'created_at', 'data', 'data_checklist', 'timestamp']:
                     if c in df_chk_veiculo.columns:
                         col_data = c
                         break
@@ -174,19 +164,15 @@ def render_dashboard(contar_registros_fn=None):
 
                 ult_chk = df_chk_veiculo.iloc[0]
 
-                resp = "Desconhecido"
-                for c_resp in ['usuario', 'responsavel', 'motorista', 'nome', 'criado_por', 'adm', 'user']:
-                    if c_resp in ult_chk and pd.notna(ult_chk[c_resp]):
-                        resp = str(ult_chk[c_resp])
-                        break
+                # Tenta identificar o nome do motorista associado ao registo
+                resp = "Motorista"
+                motorista_id = ult_chk.get('motorista_id')
+                if motorista_id is not None and not df_motoristas.empty and 'id' in df_motoristas.columns:
+                    m_match = df_motoristas[df_motoristas['id'] == motorista_id]
+                    if not m_match.empty:
+                        resp = str(m_match.iloc[0].get('nome', 'Motorista'))
 
-                is_adm = any(termo in resp.lower() for termo in ['adm', 'administrador', 'admin', 'gestor'])
-
-                if is_adm:
-                    status_list.append("Disponível")
-                else:
-                    status_list.append("Indisponível")
-                
+                status_list.append("Disponível")
                 resp_list.append(resp)
             else:
                 status_list.append("Indisponível")
@@ -198,7 +184,7 @@ def render_dashboard(contar_registros_fn=None):
         df_veiculos['status_disponibilidade'] = "Indisponível"
         df_veiculos['ultimo_responsavel'] = "N/A"
 
-    # Cálculos gerais
+    # Cálculos gerais de custos
     custo_total_manut = 0.0
     if not df_manutencoes.empty:
         for col_val in ['valor', 'custo', 'preco', 'valor_total']:
@@ -239,7 +225,7 @@ def render_dashboard(contar_registros_fn=None):
     total_motoristas = len(df_motoristas) if not df_motoristas.empty else 0
     total_manut = len(df_manutencoes)
 
-    # Métricas
+    # Métricas do Dashboard
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("🚚 Frota Total", total_veiculos)
     c2.metric("🏢 Próprios", total_proprios)
@@ -287,7 +273,7 @@ def render_dashboard(contar_registros_fn=None):
         st.success("Nenhuma ocorrência pendente!")
 
     # Caixa de Diagnóstico Avançada
-    with st.expander("🛠 Diagnóstico de Tabelas e Registos", expanded=True):
+    with st.expander("🛠 Diagnóstico de Tabelas e Registos", expanded=False):
         st.write(f"**Tabelas detetadas no PostgreSQL:** {tabelas_existentes}")
         st.write(f"**Tabela de checklists identificada:** `{tabela_checklists_encontrada}`")
         st.write(f"**Total de registos encontrados:** {len(df_checklists)}")
