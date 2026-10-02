@@ -9,7 +9,6 @@ def render_cards_veiculos_estilizados(df_veiculos):
         st.info("Nenhum veículo registado nesta secção.")
         return
 
-    # Estilo CSS atualizado com as tags de Disponível / Indisponível e indicador visual
     st.markdown("""
         <style>
         .veiculo-card {
@@ -64,9 +63,8 @@ def render_cards_veiculos_estilizados(df_veiculos):
         modelo = str(row.get('modelo', 'N/A'))
         tipo = str(row.get('tipo_propriedade', row.get('tipo', 'N/A')))
         
-        # Dados do último checklist vindos do cruzamento
         status_disp = row.get('status_disponibilidade', 'Indisponível')
-        ultimo_resp = row.get('ultimo_responsavel', 'Nenhum registo')
+        ultimo_resp = row.get('ultimo_responsavel', 'Sem registo')
         
         if status_disp == 'Disponível':
             badge_html = '<span class="badge-disponivel">🟢 Disponível</span>'
@@ -87,7 +85,7 @@ def render_cards_veiculos_estilizados(df_veiculos):
 
 
 def render_dashboard(contar_registros_fn=None):
-    st.title("📊 Painel Geral")
+    st.title("📊 Painel Geral (v3.2 - Diagnóstico)")
 
     conn = get_connection()
     try:
@@ -110,7 +108,6 @@ def render_dashboard(contar_registros_fn=None):
     except Exception:
         df_checklists = pd.DataFrame()
 
-    # Carregar contratos
     df_contratos = pd.DataFrame()
     try:
         df_contratos = pd.read_sql_query("SELECT * FROM contratos", conn)
@@ -122,31 +119,38 @@ def render_dashboard(contar_registros_fn=None):
 
     conn.close()
 
-    # Cruzamento inteligente com a tabela de checklists para cada veículo
+    # Cruzamento super flexível com a tabela de checklists
     if not df_veiculos.empty:
         status_list = []
         resp_list = []
 
         for _, v_row in df_veiculos.iterrows():
-            # Tentar identificar a placa do veículo em várias colunas possíveis
-            p_val = str(v_row.get('placa', '')).strip()
-            id_val = str(v_row.get('id', ''))
+            p_val = str(v_row.get('placa', '')).strip().upper()
+            v_id = str(v_row.get('id', ''))
 
             df_chk_veiculo = pd.DataFrame()
             if not df_checklists.empty:
-                # Procurar colunas comuns de referência ao veículo no checklist
-                col_chk_veiculo = None
-                for c in ['placa', 'veiculo_placa', 'veiculo_id', 'id_veiculo', 'veiculo']:
+                # Vamos testar todas as colunas possíveis na tabela checklists
+                colunas_possiveis = ['placa', 'veiculo_placa', 'veiculo_id', 'id_veiculo', 'veiculo', 'id_veiculo']
+                col_encontrada = None
+                for c in colunas_possiveis:
                     if c in df_checklists.columns:
-                        col_chk_veiculo = c
+                        col_encontrada = c
                         break
                 
-                if col_chk_veiculo:
-                    mask = df_checklists[col_chk_veiculo].astype(str).str.strip().str.upper() == p_val.upper()
+                if col_encontrada:
+                    # Tentar filtrar por placa ou ID
+                    mask = (
+                        (df_checklists[col_encontrada].astype(str).str.strip().str.upper() == p_val) | 
+                        (df_checklists[col_encontrada].astype(str).str.strip() == v_id)
+                    )
                     df_chk_veiculo = df_checklists[mask]
+                else:
+                    # Se nenhuma coluna óbvia existir, usar o dataframe inteiro para inspeção
+                    df_chk_veiculo = df_checklists
 
             if not df_chk_veiculo.empty:
-                # Ordenar por data se existir coluna de data ou ID decrescente para pegar o mais recente
+                # Ordenar pelo mais recente se houver coluna de data/id
                 col_data = None
                 for c in ['data', 'data_checklist', 'created_at', 'data_hora', 'id']:
                     if c in df_chk_veiculo.columns:
@@ -161,29 +165,21 @@ def render_dashboard(contar_registros_fn=None):
 
                 ult_chk = df_chk_veiculo.iloc[0]
 
-                # Descobrir quem fez o checklist (procurando colunas de utilizador, responsavel, motorista, admin)
+                # Procurar o responsável em qualquer coluna textual relevante
                 resp = "Desconhecido"
-                for c_resp in ['usuario', 'responsavel', 'motorista', 'nome', 'criado_por', 'adm']:
+                for c_resp in ['usuario', 'responsavel', 'motorista', 'nome', 'criado_por', 'adm', 'user', 'operador']:
                     if c_resp in ult_chk and pd.notna(ult_chk[c_resp]):
                         resp = str(ult_chk[c_resp])
                         break
 
                 resp_lower = resp.lower()
-                # Regra: Se foi feito pelo adm (ou contem admin/administrador) e sem pendências graves, fica Disponível
-                # Caso contrário (outro utilizador/motorista), fica Indisponível para validação
-                is_adm = "adm" in resp_lower or "administrador" in resp_lower
-                
-                # Verificar se há status explícito de aprovação
-                status_aprovado = True
-                for c_status in ['status', 'aprovado', 'situacao']:
-                    if c_status in ult_chk and pd.notna(ult_chk[c_status]):
-                        val_st = str(ult_chk[c_status]).lower()
-                        if any(neg in val_st for n in ['reprov', 'pend', 'manuten', 'nao', 'false']):
-                            status_aprovado = False
+                # Se contiver admin, adm, ou o nome do administrador, fica Disponível
+                is_adm = any(termo in resp_lower for termo in ['adm', 'administrador', 'admin', 'gestor'])
 
-                if is_adm and status_aprovado:
+                if is_adm:
                     status_list.append("Disponível")
                 else:
+                    # Se foi feito por outro utilizador, fica indisponível para conferência
                     status_list.append("Indisponível")
                 
                 resp_list.append(resp)
@@ -197,7 +193,7 @@ def render_dashboard(contar_registros_fn=None):
         df_veiculos['status_disponibilidade'] = "Indisponível"
         df_veiculos['ultimo_responsavel'] = "N/A"
 
-    # Cálculo do Custo de Manutenções
+    # Cálculos gerais
     custo_total_manut = 0.0
     if not df_manutencoes.empty:
         for col_val in ['valor', 'custo', 'preco', 'valor_total']:
@@ -215,7 +211,6 @@ def render_dashboard(contar_registros_fn=None):
                 except Exception:
                     pass
 
-    # Verificação de contratos
     total_contratos_venc = len(df_contratos)
     if not df_contratos.empty:
         for col_dt in ['vencimento', 'data_fim', 'fim_contrato', 'data_vencimento']:
@@ -229,7 +224,6 @@ def render_dashboard(contar_registros_fn=None):
                 except Exception:
                     pass
 
-    # Separação correta de veículos
     df_alugados = pd.DataFrame()
     df_proprios = pd.DataFrame()
 
@@ -311,3 +305,11 @@ def render_dashboard(contar_registros_fn=None):
 
     with tab_pendencias:
         st.success("Nenhuma ocorrência pendente!")
+
+    # 🔍 Caixa de Diagnóstico Temporária para ver os dados reais da tabela checklists
+    with st.expander("🛠 Ver Dados Reais da Tabela Checklists (Debug)", expanded=True):
+        st.write(f"Total de registos na tabela `checklists`: {len(df_checklists)}")
+        if not df_checklists.empty:
+            st.dataframe(df_checklists, use_container_width=True)
+        else:
+            st.warning("A tabela `checklists` está vazia na base de dados SQLite.")
