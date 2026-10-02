@@ -143,20 +143,77 @@ def atualizar_motorista(
 
 
 # =========================================================================
-# VEÍCULOS (ATUALIZADO PARA FROTA PRÓPRIA E ALUGADA)
+# VEÍCULOS (ATUALIZADO COM GARANTIA DE COLUNAS)
 # =========================================================================
 
 
+def garantir_tabela_veiculos():
+    """Garante que a tabela veiculos existe e possui todas as colunas de propriedade/locação."""
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS veiculos (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                placa TEXT,
+                marca TEXT,
+                modelo TEXT,
+                ano INTEGER,
+                tipo TEXT,
+                cor TEXT,
+                chassi TEXT,
+                km_atual REAL,
+                motorista_id INTEGER,
+                status TEXT,
+                tipo_propriedade TEXT,
+                locadora TEXT,
+                inicio_contrato TEXT,
+                fim_contrato TEXT,
+                valor_mensal REAL,
+                FOREIGN KEY (motorista_id) REFERENCES motoristas (id)
+            )
+        """
+        )
+
+        # Verifica se as colunas novas existem em bases antigas e adiciona se faltarem
+        cursor.execute("PRAGMA table_info(veiculos)")
+        colunas_existentes = [col[1] for col in cursor.fetchall()]
+
+        colunas_necessarias = {
+            "tipo_propriedade": "TEXT",
+            "locadora": "TEXT",
+            "inicio_contrato": "TEXT",
+            "fim_contrato": "TEXT",
+            "valor_mensal": "REAL",
+        }
+
+        for coluna, tipo_dado in colunas_necessarias.items():
+            if coluna not in colunas_existentes:
+                cursor.execute(
+                    f"ALTER TABLE veiculos ADD COLUMN {coluna} {tipo_dado}"
+                )
+
+        conn.commit()
+    except Exception as e:
+        print(f"Erro ao garantir tabela de veículos: {e}")
+    finally:
+        conn.close()
+
+
 def listar_veiculos():
+    garantir_tabela_veiculos()
     conn = get_connection()
     conn.row_factory = sqlite3.Row
     try:
         cursor = conn.cursor()
-        cursor.execute("""
+        cursor.execute(
+            """
             SELECT v.*, m.nome as motorista 
             FROM veiculos v 
             LEFT JOIN motoristas m ON v.motorista_id = m.id
-        """)
+        """
+        )
         rows = cursor.fetchall()
         return rows
     finally:
@@ -180,6 +237,7 @@ def salvar_veiculo(
     valor_mensal=0.0,
     status="Disponível",
 ):
+    garantir_tabela_veiculos()
     conn = get_connection()
     try:
         cursor = conn.cursor()
@@ -235,6 +293,7 @@ def atualizar_veiculo(
     valor_mensal=0.0,
     status="Disponível",
 ):
+    garantir_tabela_veiculos()
     conn = get_connection()
     try:
         cursor = conn.cursor()
