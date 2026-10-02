@@ -258,7 +258,7 @@ def render():
     # ABA 1: FORMULÁRIO DE NOVO CHECKLIST
     # -------------------------------------------------------------------------
     with tab_novo:
-        st.caption("Preencha a inspeção do veículo de forma rápida.")
+        st.caption("Preencha a inspeção do veículo com atenção.")
 
         veiculos = listar_veiculos()
 
