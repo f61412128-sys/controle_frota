@@ -4,60 +4,6 @@ import streamlit as st
 from database.connection import get_connection
 
 
-def render_cards_veiculos_original(df_veiculos):
-    if df_veiculos.empty:
-        st.info("Nenhum veículo registado nesta secção.")
-        return
-
-    st.markdown("""
-        <style>
-        .veiculo-card {
-            background-color: #111827;
-            border: 1px solid #1f2937;
-            border-left: 4px solid #3b82f6;
-            padding: 12px;
-            border-radius: 8px;
-            margin-bottom: 10px;
-        }
-        .veiculo-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 6px;
-        }
-        .veiculo-placa {
-            font-size: 15px;
-            font-weight: bold;
-            color: #ffffff;
-        }
-        .veiculo-info {
-            font-size: 12px;
-            color: #9ca3af;
-            margin-bottom: 2px;
-        }
-        .veiculo-info span {
-            color: #f3f4f6;
-            font-weight: 500;
-        }
-        </style>
-    """, unsafe_allow_html=True)
-
-    for _, row in df_veiculos.iterrows():
-        placa = str(row.get('placa', 'N/A'))
-        modelo = str(row.get('modelo', 'N/A'))
-        tipo = str(row.get('tipo_propriedade', row.get('tipo', 'N/A')))
-        
-        st.markdown(f"""
-            <div class="veiculo-card">
-                <div class="veiculo-header">
-                    <span class="veiculo-placa">🚗 {placa}</span>
-                </div>
-                <div class="veiculo-info">Modelo: <span>{modelo}</span></div>
-                <div class="veiculo-info">Tipo: <span>{tipo}</span></div>
-            </div>
-        """, unsafe_allow_html=True)
-
-
 def render_dashboard(contar_registros_fn=None):
     st.title("📊 Painel Geral")
 
@@ -77,34 +23,61 @@ def render_dashboard(contar_registros_fn=None):
     except Exception:
         df_motoristas = pd.DataFrame()
 
+    try:
+        df_checklists = pd.read_sql_query("SELECT * FROM checklists", conn)
+    except Exception:
+        df_checklists = pd.DataFrame()
+
     conn.close()
 
-    # Separação exata usando a coluna tipo_propriedade vista no diagnóstico
-    df_alugados = pd.DataFrame()
+    # Cálculo correto do Custo de Manutenções
+    custo_total_manut = 0.0
+    if not df_manutencoes.empty:
+        for col_val in ['valor', 'custo', 'preco', 'valor_total']:
+            if col_val in df_manutencoes.columns:
+                try:
+                    valores_limpos = pd.to_numeric(
+                        df_manutencoes[col_val].astype(str)
+                        .str.replace('R$', '', regex=True)
+                        .str.replace('.', '', regex=False)
+                        .str.replace(',', '.', regex=False),
+                        errors='coerce'
+                    )
+                    custo_total_manut = float(valores_limpos.sum())
+                    break
+                except Exception:
+                    pass
+
+    # Separação exata com base na coluna tipo_propriedade
+    df_alugados_terceirizados = pd.DataFrame()
     df_proprios = pd.DataFrame()
 
     if not df_veiculos.empty and 'tipo_propriedade' in df_veiculos.columns:
+        # Tudo o que for Alugado ou Terceirizado vai para a primeira aba
+        mask_alug = df_veiculos['tipo_propriedade'].astype(str).str.lower().str.contains("alugado|terceirizado|locado|terceiro", na=False)
+        df_alugados_terceirizados = df_veiculos[mask_alug].copy()
+        
+        # Tudo o que for Próprio vai para a aba de próprios
         mask_prop = df_veiculos['tipo_propriedade'].astype(str).str.lower().str.contains("próprio|proprio", na=False)
         df_proprios = df_veiculos[mask_prop].copy()
-        df_alugados = df_veiculos[~mask_prop].copy()
     elif not df_veiculos.empty:
-        df_alugados = df_veiculos.copy()
+        df_proprios = df_veiculos.copy()
 
     total_veiculos = len(df_veiculos)
     total_proprios = len(df_proprios)
-    total_alugados = len(df_alugados)
+    total_alugados = len(df_alugados_terceirizados)
     total_motoristas = len(df_motoristas) if not df_motoristas.empty else 0
-    total_manut = len(df_manutencoes)
+    total_manut_andamento = len(df_manutencoes)
 
     # Métricas Superiores
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("🚚 Frota Total", total_veiculos)
     c2.metric("🏢 Próprios", total_proprios)
     c3.metric("📋 Alugados", total_alugados)
-    c4.metric("🛠 Em Manutenção", total_manut)
+    c4.metric("🛠 Em Manutenção", total_manut_andamento)
 
     c5, c6, c7, c8 = st.columns(4)
-    c5.metric("💰 Custo Manutenções", "R$ 0,00")
+    c5.metric("💰 Custo Manutenções", f"R$ {custo_total_manut:,.2f}")
     c6.metric("👨‍✈️ Motoristas", total_motoristas)
     c7.metric("⚠ Ocorrências", 0)
     c8.metric("📄 Venc. Contratos", 0, delta="OK")
@@ -123,11 +96,33 @@ def render_dashboard(contar_registros_fn=None):
 
         with sub_alug:
             st.markdown("##### Veículos Alugados / Terceirizados")
-            render_cards_veiculos_original(df_alugados)
+            if not df_alugados_terceirizados.empty:
+                for _, row in df_alugados_terceirizados.iterrows():
+                    placa = row.get('placa', 'N/A')
+                    modelo = row.get('modelo', 'N/A')
+                    tipo = row.get('tipo_propriedade', row.get('tipo', 'N/A'))
+                    
+                    with st.container(border=True):
+                        st.markdown(f"**🚗 Placa:** {placa}")
+                        st.write(f"**Modelo:** {modelo}")
+                        st.write(f"**Tipo:** {tipo}")
+            else:
+                st.info("Nenhum veículo alugado ou terceirizado registado.")
 
         with sub_prop:
             st.markdown("##### Veículos Próprios")
-            render_cards_veiculos_original(df_proprios)
+            if not df_proprios.empty:
+                for _, row in df_proprios.iterrows():
+                    placa = row.get('placa', 'N/A')
+                    modelo = row.get('modelo', 'N/A')
+                    tipo = row.get('tipo_propriedade', row.get('tipo', 'N/A'))
+                    
+                    with st.container(border=True):
+                        st.markdown(f"**🏢 Placa:** {placa}")
+                        st.write(f"**Modelo:** {modelo}")
+                        st.write(f"**Tipo:** {tipo}")
+            else:
+                st.info("Nenhum veículo próprio registado.")
 
     with tab_rodizio:
         st.markdown("##### Consulta de Rodízio (SP)")
@@ -146,3 +141,9 @@ def render_dashboard(contar_registros_fn=None):
 
     with tab_pendencias:
         st.success("Nenhuma ocorrência pendente!")
+
+    with st.expander("🔍 Diagnóstico Completo da Base de Dados", expanded=False):
+        st.write("--- Veículos ---")
+        st.dataframe(df_veiculos, use_container_width=True)
+        st.write("--- Manutenções ---")
+        st.dataframe(df_manutencoes, use_container_width=True)
