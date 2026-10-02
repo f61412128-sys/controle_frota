@@ -1,21 +1,68 @@
 import datetime
-import os
 import pandas as pd
 import streamlit as st
 from database.connection import get_connection
 
 
-def render_dashboard(contar_registros_fn=None):
-    st.title("📊 Painel Geral (v3.0 - Forçado)")
-
-    # 1. Ligação segura à base de dados
-    try:
-        conn = get_connection()
-    except Exception as e:
-        st.error(f"Erro ao ligar à base de dados: {e}")
+def render_cards_veiculos_estilizados(df_veiculos):
+    if df_veiculos.empty:
+        st.info("Nenhum veículo registado nesta secção.")
         return
 
-    # 2. Leitura de dados com tratamento de tabelas vazias ou inexistentes
+    # Estilo CSS original com os cards escuros, borda azul e fontes alinhadas
+    st.markdown("""
+        <style>
+        .veiculo-card {
+            background-color: #111827;
+            border: 1px solid #1f2937;
+            border-left: 4px solid #3b82f6;
+            padding: 12px 16px;
+            border-radius: 8px;
+            margin-bottom: 12px;
+        }
+        .veiculo-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+        .veiculo-placa {
+            font-size: 15px;
+            font-weight: bold;
+            color: #ffffff;
+        }
+        .veiculo-info {
+            font-size: 13px;
+            color: #9ca3af;
+            margin-bottom: 4px;
+        }
+        .veiculo-info span {
+            color: #f3f4f6;
+            font-weight: 500;
+        }
+        </style>
+    """, unsafe_allow_html=True)
+
+    for _, row in df_veiculos.iterrows():
+        placa = str(row.get('placa', 'N/A'))
+        modelo = str(row.get('modelo', 'N/A'))
+        tipo = str(row.get('tipo_propriedade', row.get('tipo', 'N/A')))
+        
+        st.markdown(f"""
+            <div class="veiculo-card">
+                <div class="veiculo-header">
+                    <span class="veiculo-placa">🚗 {placa}</span>
+                </div>
+                <div class="veiculo-info">Modelo: <span>{modelo}</span></div>
+                <div class="veiculo-info">Tipo: <span>{tipo}</span></div>
+            </div>
+        """, unsafe_allow_html=True)
+
+
+def render_dashboard(contar_registros_fn=None):
+    st.title("📊 Painel Geral")
+
+    conn = get_connection()
     try:
         df_veiculos = pd.read_sql_query("SELECT * FROM veiculos", conn)
     except Exception:
@@ -31,14 +78,19 @@ def render_dashboard(contar_registros_fn=None):
     except Exception:
         df_motoristas = pd.DataFrame()
 
+    # Tentar carregar contratos se a tabela existir
+    df_contratos = pd.DataFrame()
     try:
-        df_checklists = pd.read_sql_query("SELECT * FROM checklists", conn)
+        df_contratos = pd.read_sql_query("SELECT * FROM contratos", conn)
     except Exception:
-        df_checklists = pd.DataFrame()
+        try:
+            df_contratos = pd.read_sql_query("SELECT * FROM vencimento_contratos", conn)
+        except Exception:
+            pass
 
     conn.close()
 
-    # 3. Cálculo do Custo de Manutenções
+    # Cálculo do Custo de Manutenções
     custo_total_manut = 0.0
     if not df_manutencoes.empty:
         for col_val in ['valor', 'custo', 'preco', 'valor_total']:
@@ -56,12 +108,27 @@ def render_dashboard(contar_registros_fn=None):
                 except Exception:
                     pass
 
-    # 4. Filtragem robusta baseada em tipo_propriedade ou tipo
+    # Verificação de contratos vencidos ou a vencer
+    total_contratos_venc = len(df_contratos)
+    if not df_contratos.empty:
+        # Se houver coluna de data de vencimento, podemos filtrar por exemplo os próximos 30 dias ou vencidos
+        for col_dt in ['vencimento', 'data_fim', 'fim_contrato', 'data_vencimento']:
+            if col_dt in df_contratos.columns:
+                try:
+                    dt_venc = pd.to_datetime(df_contratos[col_dt], errors='coerce')
+                    hoje = pd.Timestamp.today()
+                    # Contratos vencidos ou a vencer em 30 dias
+                    proximos = df_contratos[(dt_venc >= hoje) & (dt_venc <= hoje + pd.Timedelta(days=30))]
+                    total_contratos_venc = len(proximos)
+                    break
+                except Exception:
+                    pass
+
+    # Separação correta de veículos
     df_alugados = pd.DataFrame()
     df_proprios = pd.DataFrame()
 
     if not df_veiculos.empty:
-        # Descobrir qual coluna indica o tipo
         col_alvo = None
         for c in ['tipo_propriedade', 'tipo', 'posse', 'categoria']:
             if c in df_veiculos.columns:
@@ -69,15 +136,12 @@ def render_dashboard(contar_registros_fn=None):
                 break
 
         if col_alvo:
-            # Tudo o que contiver alugado ou terceirizado
             mask_alug = df_veiculos[col_alvo].astype(str).str.lower().str.contains("alugado|terceirizado|locado|terceiro", na=False)
             df_alugados = df_veiculos[mask_alug].copy()
             
-            # O resto ou o que for próprio
             mask_prop = df_veiculos[col_alvo].astype(str).str.lower().str.contains("próprio|proprio", na=False)
             df_proprios = df_veiculos[mask_prop].copy()
             
-            # Se a máscara própria vier vazia mas houver registos que não são alugados
             if df_proprios.empty:
                 df_proprios = df_veiculos[~mask_alug].copy()
         else:
@@ -89,7 +153,7 @@ def render_dashboard(contar_registros_fn=None):
     total_motoristas = len(df_motoristas) if not df_motoristas.empty else 0
     total_manut = len(df_manutencoes)
 
-    # 5. Métricas Superiores
+    # Métricas Superiores
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("🚚 Frota Total", total_veiculos)
     c2.metric("🏢 Próprios", total_proprios)
@@ -100,11 +164,14 @@ def render_dashboard(contar_registros_fn=None):
     c5.metric("💰 Custo Manutenções", f"R$ {custo_total_manut:,.2f}")
     c6.metric("👨‍✈️ Motoristas", total_motoristas)
     c7.metric("⚠ Ocorrências", 0)
-    c8.metric("📄 Venc. Contratos", 0, delta="OK")
+    
+    # Métrica de contratos dinâmica baseada nos dados reais
+    delta_contrato = "Atenção" if total_contratos_venc > 0 else "OK"
+    c8.metric("📄 Venc. Contratos", total_contratos_venc, delta=delta_contrato, delta_color="inverse" if total_contratos_venc > 0 else "normal")
 
     st.divider()
 
-    # 6. Abas Principais
+    # Abas Principais
     tab_contratos, tab_rodizio, tab_manut, tab_pendencias = st.tabs([
         "📄 Gestão de Contratos & Frota",
         "🚘 Rodízio Hoje",
@@ -117,33 +184,11 @@ def render_dashboard(contar_registros_fn=None):
 
         with sub_alug:
             st.markdown("##### Veículos Alugados / Terceirizados")
-            if not df_alugados.empty:
-                for _, row in df_alugados.iterrows():
-                    placa = row.get('placa', 'N/A')
-                    modelo = row.get('modelo', 'N/A')
-                    tipo = row.get('tipo_propriedade', row.get('tipo', 'Alugado'))
-                    
-                    with st.container(border=True):
-                        st.markdown(f"**🚗 Placa:** {placa}")
-                        st.write(f"**Modelo:** {modelo}")
-                        st.write(f"**Tipo:** {tipo}")
-            else:
-                st.info("Nenhum veículo alugado ou terceirizado registado na base de dados.")
+            render_cards_veiculos_estilizados(df_alugados)
 
         with sub_prop:
             st.markdown("##### Veículos Próprios")
-            if not df_proprios.empty:
-                for _, row in df_proprios.iterrows():
-                    placa = row.get('placa', 'N/A')
-                    modelo = row.get('modelo', 'N/A')
-                    tipo = row.get('tipo_propriedade', row.get('tipo', 'Próprio'))
-                    
-                    with st.container(border=True):
-                        st.markdown(f"**🏢 Placa:** {placa}")
-                        st.write(f"**Modelo:** {modelo}")
-                        st.write(f"**Tipo:** {tipo}")
-            else:
-                st.info("Nenhum veículo próprio registado na base de dados.")
+            render_cards_veiculos_estilizados(df_proprios)
 
     with tab_rodizio:
         st.markdown("##### Consulta de Rodízio (SP)")
@@ -162,15 +207,3 @@ def render_dashboard(contar_registros_fn=None):
 
     with tab_pendencias:
         st.success("Nenhuma ocorrência pendente!")
-
-    # 7. Diagnóstico em aberto para validação imediata
-    with st.expander("🔍 Diagnóstico Completo da Base de Dados", expanded=True):
-        st.write(f"Total de registos em `veiculos`: {len(df_veiculos)}")
-        if not df_veiculos.empty:
-            st.dataframe(df_veiculos, use_container_width=True)
-        else:
-            st.warning("A tabela `veiculos` está completamente vazia no SQLite.")
-            
-        st.write(f"Total de registos em `manutencoes`: {len(df_manutencoes)}")
-        if not df_manutencoes.empty:
-            st.dataframe(df_manutencoes, use_container_width=True)
