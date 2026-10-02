@@ -5,15 +5,15 @@ from views.services.cadastros_service import listar_veiculos
 
 
 def garantir_tabela_manutencoes():
-    """Garante que a tabela manutencoes existe e possui todas as colunas necessárias."""
+    """Garante que a tabela manutencoes existe no PostgreSQL e possui todas as colunas necessárias."""
     conn = get_connection()
     try:
         cursor = conn.cursor()
-        # 1. Cria a tabela caso ela não exista de todo
+        # 1. Cria a tabela caso ela não exista (Sintaxe PostgreSQL)
         cursor.execute(
             """
             CREATE TABLE IF NOT EXISTS manutencoes (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id SERIAL PRIMARY KEY,
                 veiculo_id INTEGER,
                 tipo TEXT,
                 status TEXT,
@@ -28,10 +28,7 @@ def garantir_tabela_manutencoes():
         """
         )
         
-        # 2. Garante que colunas adicionadas recentemente existam em bases de dados antigas
-        cursor.execute("PRAGMA table_info(manutencoes)")
-        colunas_existentes = [col[1] for col in cursor.fetchall()]
-
+        # 2. Garante que colunas adicionadas recentemente existam no PostgreSQL
         colunas_necessarias = {
             "tipo": "TEXT",
             "status": "TEXT",
@@ -44,13 +41,18 @@ def garantir_tabela_manutencoes():
         }
 
         for coluna, tipo_dado in colunas_necessarias.items():
-            if coluna not in colunas_existentes:
-                cursor.execute(f"ALTER TABLE manutencoes ADD COLUMN {coluna} {tipo_dado}")
+            cursor.execute(
+                """
+                ALTER TABLE manutencoes ADD COLUMN IF NOT EXISTS %s %s
+                """ % (coluna, tipo_dado)
+            )
 
         conn.commit()
     except Exception as e:
+        conn.rollback()
         print(f"Erro ao atualizar/criar tabela de manutenções: {e}")
     finally:
+        cursor.close()
         conn.close()
 
 
@@ -65,7 +67,7 @@ def salvar_manutencao(
     data_entrada,
     proximo_km,
 ):
-    """Insere o registo de manutenção utilizando a conexão oficial do sistema."""
+    """Insere o registo de manutenção utilizando parâmetros seguros (%s) para o PostgreSQL."""
     garantir_tabela_manutencoes()
     conn = get_connection()
     try:
@@ -75,8 +77,8 @@ def salvar_manutencao(
             INSERT INTO manutencoes (
                 veiculo_id, tipo, status, problema, oficina, km, valor, data_entrada, proximo_km
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """,
             (
                 veiculo_id,
                 tipo,
@@ -94,6 +96,7 @@ def salvar_manutencao(
         conn.rollback()
         raise e
     finally:
+        cursor.close()
         conn.close()
 
 
@@ -109,7 +112,7 @@ def carregar_manutencoes():
             FROM manutencoes m
             JOIN veiculos v ON m.veiculo_id = v.id
             ORDER BY m.id DESC
-        """,
+            """,
             conn,
         )
         # Garante que a coluna valor seja sempre tratada como numérica (float)
