@@ -106,21 +106,36 @@ def ler_tabela_direta(query):
 def render_dashboard(contar_registros_fn=None):
     st.title("📊 Painel Geral da Frota")
 
-    # Descobrir quais tabelas realmente existem na base de dados para evitar erros
+    # Descobrir todas as tabelas existentes no PostgreSQL
     df_tables = ler_tabela_direta("SELECT table_name FROM information_schema.tables WHERE table_schema='public';")
     tabelas_existentes = df_tables['table_name'].tolist() if not df_tables.empty else []
 
-    # Carregar apenas tabelas que comprovadamente existem
+    # Carregar veículos e manutenções
     df_veiculos = ler_tabela_direta("SELECT * FROM veiculos") if 'veiculos' in tabelas_existentes else pd.DataFrame()
     df_manutencoes = ler_tabela_direta("SELECT * FROM manutencoes") if 'manutencoes' in tabelas_existentes else pd.DataFrame()
     df_motoristas = ler_tabela_direta("SELECT * FROM motoristas") if 'motoristas' in tabelas_existentes else pd.DataFrame()
-    df_checklists = ler_tabela_direta("SELECT * FROM checklists") if 'checklists' in tabelas_existentes else pd.DataFrame()
+
+    # Procurar automaticamente qual tabela armazena os checklists/inspeções
+    df_checklists = pd.DataFrame()
+    tabela_checklists_encontrada = "Nenhuma"
     
-    df_contratos = pd.DataFrame()
-    for t in ['contratos', 'vencimento_contratos']:
+    candidatos_tabelas = ['checklists', 'checklist', 'historico_checklists', 'inspecoes', 'vistoria', 'vistorias']
+    for t in candidatos_tabelas:
         if t in tabelas_existentes:
-            df_contratos = ler_tabela_direta(f"SELECT * FROM {t}")
-            break
+            df_temp = ler_tabela_direta(f"SELECT * FROM {t}")
+            if not df_temp.empty:
+                df_checklists = df_temp
+                tabela_checklists_encontrada = t
+                break
+    
+    # Se nenhuma das conhecidas tiver dados, tenta a primeira que tiver registos
+    if df_checklists.empty:
+        for t in tabelas_existentes:
+            df_temp = ler_tabela_direta(f"SELECT * FROM {t}")
+            if not df_temp.empty and any(k in t.lower() for k in ['check', 'insp', 'vist', 'reg']):
+                df_checklists = df_temp
+                tabela_checklists_encontrada = t
+                break
 
     # Cruzamento de checklists com os veículos
     if not df_veiculos.empty:
@@ -201,8 +216,6 @@ def render_dashboard(contar_registros_fn=None):
                 except Exception:
                     pass
 
-    total_contratos_venc = len(df_contratos)
-
     df_alugados = pd.DataFrame()
     df_proprios = pd.DataFrame()
 
@@ -237,7 +250,7 @@ def render_dashboard(contar_registros_fn=None):
     c5.metric("💰 Custo Manutenções", f"R$ {custo_total_manut:,.2f}")
     c6.metric("👨‍✈️ Motoristas", total_motoristas)
     c7.metric("⚠ Ocorrências", 0)
-    c8.metric("📄 Venc. Contratos", total_contratos_venc)
+    c8.metric("📄 Venc. Contratos", 0)
 
     st.divider()
 
@@ -273,9 +286,10 @@ def render_dashboard(contar_registros_fn=None):
     with tab_pendencias:
         st.success("Nenhuma ocorrência pendente!")
 
-    # Diagnóstico informativo atualizado
-    with st.expander("🛠 Estado da Base de Dados", expanded=False):
+    # Caixa de Diagnóstico Avançada
+    with st.expander("🛠 Diagnóstico de Tabelas e Registos", expanded=True):
         st.write(f"**Tabelas detetadas no PostgreSQL:** {tabelas_existentes}")
-        st.write(f"**Total de registos na tabela `checklists`:** {len(df_checklists)}")
-        if df_checklists.empty:
-            st.info("Dica: A tabela `checklists` está vazia. Registe um novo checklist na aplicação para que os veículos passem a exibir dados e fiquem disponíveis.")
+        st.write(f"**Tabela de checklists identificada:** `{tabela_checklists_encontrada}`")
+        st.write(f"**Total de registos encontrados:** {len(df_checklists)}")
+        if not df_checklists.empty:
+            st.dataframe(df_checklists.head(5), use_container_width=True)
