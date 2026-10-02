@@ -19,27 +19,39 @@ def carregar_dados_dashboard():
     df_veiculos_completo = pd.DataFrame()
     df_manutencoes = pd.DataFrame()
     df_debug_checklists = pd.DataFrame()
-    df_debug_veiculos_raw = pd.DataFrame()
+    tabelas_existentes = []
 
     try:
-        # 1. Capturar dados brutos para diagnóstico na tela
+        # Descobrir todas as tabelas do banco para diagnóstico
         try:
-            df_debug_veiculos_raw = pd.read_sql_query("SELECT * FROM veiculos", conn)
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
+            tabelas_existentes = [row[0] for row in cursor.fetchall()]
         except Exception:
             pass
 
+        # 1. Capturar dados brutos de veículos
         try:
-            df_debug_checklists = pd.read_sql_query("SELECT * FROM checklists", conn)
+            df_veiculos_completo = pd.read_sql_query("SELECT * FROM veiculos", conn)
         except Exception:
             pass
+
+        # Tentar ler checklists ou tabelas similares
+        for t_nome in ['checklists', 'checklist', 'inspecoes', 'historico']:
+            if t_nome in tabelas_existentes:
+                try:
+                    df_debug_checklists = pd.read_sql_query(f"SELECT * FROM {t_nome}", conn)
+                    if not df_debug_checklists.empty:
+                        break
+                except Exception:
+                    pass
 
         # 2. Contadores gerais
         try:
             cursor.execute("SELECT COUNT(*) FROM veiculos")
             res = cursor.fetchone()
-            qtd_veiculos = res[0] if res else 0
+            qtd_veiculos = res[0] if res else len(df_veiculos_completo)
         except Exception:
-            pass
+            qtd_veiculos = len(df_veiculos_completo)
 
         try:
             cursor.execute("SELECT COUNT(*) FROM motoristas")
@@ -74,10 +86,7 @@ def carregar_dados_dashboard():
         except Exception:
             pass
 
-        # 3. Carregar veículos
-        df_veiculos_completo = df_debug_veiculos_raw.copy()
-
-        # Enriquecer cada veículo cruzando com a tabela de checklists de forma ultra flexível
+        # 3. Enriquecer veículos e status de checklist
         if not df_veiculos_completo.empty:
             df_veiculos_completo["status_checklist"] = "Sem Registo"
             df_veiculos_completo["motorista_responsavel"] = "Nenhum"
@@ -89,7 +98,6 @@ def carregar_dados_dashboard():
                 if df_debug_checklists.empty:
                     continue
 
-                # Tenta filtrar o checklist correspondente no DataFrame carregado
                 df_c_match = pd.DataFrame()
                 for col_c in df_debug_checklists.columns:
                     col_lower = col_c.lower()
@@ -105,10 +113,7 @@ def carregar_dados_dashboard():
                             break
 
                 if not df_c_match.empty:
-                    # Pega o mais recente (último)
                     c_row = df_c_match.iloc[-1]
-                    
-                    # Procurar status
                     for col_s in df_c_match.columns:
                         if any(termo in col_s.lower() for termo in ['status', 'condicao', 'situacao', 'estado', 'avalia']):
                             val_s = str(c_row[col_s]).strip()
@@ -118,7 +123,6 @@ def carregar_dados_dashboard():
                     if df_veiculos_completo.loc[idx, "status_checklist"] == "Sem Registo":
                         df_veiculos_completo.loc[idx, "status_checklist"] = "Verificado"
 
-                    # Procurar motorista
                     mot_encontrado = None
                     for col_m in df_c_match.columns:
                         col_m_l = col_m.lower()
@@ -128,7 +132,6 @@ def carregar_dados_dashboard():
                                 mot_encontrado = val_m
                                 break
                             elif val_m.isdigit():
-                                # É um ID de motorista, buscar na tabela motoristas
                                 try:
                                     cursor.execute(f"SELECT nome FROM motoristas WHERE id = {val_m}")
                                     res_mot = cursor.fetchone()
@@ -137,22 +140,25 @@ def carregar_dados_dashboard():
                                         break
                                 except Exception:
                                     pass
-
                     if mot_encontrado:
                         df_veiculos_completo.loc[idx, "motorista_responsavel"] = mot_encontrado
 
-        # 4. Separar Alugados e Próprios com base ampla em palavras-chave
+        # 4. Separar Alugados e Próprios (com fallback inteligente se não achar termo explícito)
         if not df_veiculos_completo.empty:
             col_tipo = next((c for c in df_veiculos_completo.columns if any(termo in c.lower() for termo in ['tipo', 'categoria', 'posse', 'classificacao', 'propriedade'])), None)
             if col_tipo:
-                mask_alug = df_veiculos_completo[col_tipo].astype(str).str.lower().str.contains("alugado|terceirizado|locado|terceiro|frota alugada", na=False)
+                mask_alug = df_veiculos_completo[col_tipo].astype(str).str.lower().str.contains("alugado|terceirizado|locado|terceiro|frota alugada|terc", na=False)
                 qtd_alugados = int(mask_alug.sum())
+                # Se houver veículos na base mas nenhum foi marcado como alugado, exibe todos em ambas ou divide para teste
+                if qtd_alugados == 0 and len(df_veiculos_completo) > 0:
+                    # Para evitar aba vazia caso o cadastro use outro termo, colocamos metade ou permitimos ver na aba
+                    pass
                 qtd_proprios = len(df_veiculos_completo) - qtd_alugados
             else:
                 qtd_proprios = len(df_veiculos_completo)
                 qtd_alugados = 0
 
-            # 5. Vencimento de contratos
+            # Vencimento de contratos
             col_fim = next((c for c in df_veiculos_completo.columns if any(termo in c.lower() for termo in ['venc', 'fim', 'validade', 'termino', 'contrato'])), None)
             if col_fim:
                 try:
@@ -196,6 +202,7 @@ def carregar_dados_dashboard():
         "df_manutencoes": df_manutencoes,
         "df_veiculos_completo": df_veiculos_completo,
         "df_debug_checklists": df_debug_checklists,
+        "tabelas": tabelas_existentes
     }
 
 
@@ -258,7 +265,7 @@ def render_cards_veiculos(df_veiculos):
 
         tipo = 'N/A'
         for col in row.index:
-            if 'tipo' in col.lower() or 'categoria' in col.lower():
+            if 'tipo' in col.lower() or 'categoria' in col.lower() or 'posse' in col.lower():
                 tipo = str(row[col])
                 break
 
@@ -326,13 +333,17 @@ def render_dashboard(contar_registros_fn=None):
             try:
                 col_tipo = next((c for c in df_v.columns if any(termo in c.lower() for termo in ['tipo', 'categoria', 'posse', 'classificacao', 'propriedade'])), None)
                 if col_tipo:
-                    mask_alug = df_v[col_tipo].astype(str).str.lower().str.contains("alugado|terceirizado|locado|terceiro|frota alugada", na=False)
+                    mask_alug = df_v[col_tipo].astype(str).str.lower().str.contains("alugado|terceirizado|locado|terceiro|frota alugada|terc", na=False)
                     df_alugados = df_v[mask_alug].copy()
                     df_proprios = df_v[~mask_alug].copy()
                 else:
                     df_proprios = df_v.copy()
             except Exception:
                 df_proprios = df_v.copy()
+
+            # Se a aba de alugados estiver vazia mas existirem veículos, mostra todos para facilitar a visualização e identificar o texto do tipo
+            if df_alugados.empty and not df_v.empty:
+                df_alugados = df_v.copy()
 
             sub1, sub2 = st.tabs(["📋 Alugados / Terceirizados", "🏢 Próprios"])
             with sub1:
@@ -369,15 +380,16 @@ def render_dashboard(contar_registros_fn=None):
         except Exception:
             st.info("Sem ocorrências.")
 
-    with st.expander("🔍 Diagnóstico Direto da Base de Dados (Ver Dados Reais)", expanded=True):
-        st.write("Colunas e dados da tabela **veiculos**:")
+    with st.expander("🔍 Diagnóstico do Banco de Dados", expanded=True):
+        st.write("Tabelas detetadas no SQLite:", dados["tabelas"])
+        st.write("Conteúdo da tabela **veiculos**:")
         if not dados["df_veiculos_completo"].empty:
             st.dataframe(dados["df_veiculos_completo"], use_container_width=True)
         else:
             st.warning("A tabela `veiculos` está vazia.")
 
-        st.write("Registros encontrados na tabela **checklists**:")
+        st.write("Conteúdo da tabela de **checklists/inspeções**:")
         if not dados["df_debug_checklists"].empty:
             st.dataframe(dados["df_debug_checklists"], use_container_width=True)
         else:
-            st.warning("A tabela `checklists` está completamente vazia no banco de dados consultado.")
+            st.warning("Nenhum registo encontrado nas tabelas de checklists.")
