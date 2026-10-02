@@ -22,9 +22,9 @@ def _lista_sql(opcoes):
     return ", ".join(f"'{o}'" for o in opcoes)
 
 
-SCHEMA = f"""
+SCHEMA = """
 CREATE TABLE IF NOT EXISTS motoristas (
-    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    id             SERIAL PRIMARY KEY,
     nome           TEXT NOT NULL,
     cpf_matricula  TEXT NOT NULL UNIQUE,
     telefone       TEXT,
@@ -32,58 +32,58 @@ CREATE TABLE IF NOT EXISTS motoristas (
     categoria_cnh  TEXT,
     validade_cnh   TEXT,
     status         TEXT NOT NULL DEFAULT 'Ativo',
-    criado_em      TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+    criado_em      TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS usuarios (
-    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    id             SERIAL PRIMARY KEY,
     nome           TEXT NOT NULL,
     login          TEXT NOT NULL UNIQUE,
     senha_hash     TEXT NOT NULL,
     perfil         TEXT NOT NULL,
     motorista_id   INTEGER,
     ativo          INTEGER NOT NULL DEFAULT 1,
-    criado_em      TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+    criado_em      TIMESTAMP NOT NULL DEFAULT NOW(),
     FOREIGN KEY (motorista_id) REFERENCES motoristas(id) ON DELETE SET NULL
 );
 
 CREATE TABLE IF NOT EXISTS veiculos (
-    id                 INTEGER PRIMARY KEY AUTOINCREMENT,
-    placa              TEXT NOT NULL UNIQUE,
-    marca              TEXT NOT NULL,
-    modelo             TEXT NOT NULL,
-    ano                INTEGER,
-    tipo               TEXT,
-    cor                TEXT,
-    chassi             TEXT,
-    km_atual           INTEGER NOT NULL DEFAULT 0,
-    motorista_id       INTEGER,
-    status             TEXT NOT NULL DEFAULT 'Disponível',
-    tipo_propriedade   TEXT NOT NULL DEFAULT 'Próprio',
-    locadora           TEXT,
-    inicio_contrato    TEXT,
-    fim_contrato       TEXT,
-    valor_mensal       REAL DEFAULT 0.0,
-    foto_path          TEXT,
-    criado_em          TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+    id                   SERIAL PRIMARY KEY,
+    placa                TEXT NOT NULL UNIQUE,
+    marca                TEXT NOT NULL,
+    modelo               TEXT NOT NULL,
+    ano                  INTEGER,
+    tipo                 TEXT,
+    cor                  TEXT,
+    chassi               TEXT,
+    km_atual             INTEGER NOT NULL DEFAULT 0,
+    motorista_id         INTEGER,
+    status               TEXT NOT NULL DEFAULT 'Disponível',
+    tipo_propriedade     TEXT NOT NULL DEFAULT 'Próprio',
+    locadora             TEXT,
+    inicio_contrato      TEXT,
+    fim_contrato         TEXT,
+    valor_mensal         REAL DEFAULT 0.0,
+    foto_path            TEXT,
+    criado_em            TIMESTAMP NOT NULL DEFAULT NOW(),
     FOREIGN KEY (motorista_id) REFERENCES motoristas(id) ON DELETE SET NULL
 );
 
 CREATE TABLE IF NOT EXISTS checklists (
-    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    id            SERIAL PRIMARY KEY,
     veiculo_id    INTEGER NOT NULL,
     motorista_id  INTEGER NOT NULL,
-    data_hora     TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+    data_hora     TIMESTAMP NOT NULL DEFAULT NOW(),
     km            INTEGER NOT NULL,
     resultado     TEXT NOT NULL DEFAULT 'Aprovado',
     observacoes   TEXT,
     localizacao   TEXT,
-    FOREIGN KEY (veiculo_id)   REFERENCES veiculos(id),
+    FOREIGN KEY (veiculo_id)    REFERENCES veiculos(id),
     FOREIGN KEY (motorista_id) REFERENCES motoristas(id)
 );
 
 CREATE TABLE IF NOT EXISTS itens_checklist (
-    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    id            SERIAL PRIMARY KEY,
     checklist_id  INTEGER NOT NULL,
     categoria     TEXT NOT NULL,
     item          TEXT NOT NULL,
@@ -92,12 +92,12 @@ CREATE TABLE IF NOT EXISTS itens_checklist (
 );
 
 CREATE TABLE IF NOT EXISTS ocorrencias (
-    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    id                  SERIAL PRIMARY KEY,
     veiculo_id          INTEGER NOT NULL,
     motorista_id        INTEGER NOT NULL,
     checklist_id        INTEGER,
     item_checklist_id   INTEGER,
-    data_hora           TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+    data_hora           TIMESTAMP NOT NULL DEFAULT NOW(),
     km                  INTEGER,
     categoria           TEXT,
     item                TEXT NOT NULL,
@@ -105,7 +105,7 @@ CREATE TABLE IF NOT EXISTS ocorrencias (
     gravidade           TEXT NOT NULL DEFAULT 'Média',
     foto_path           TEXT,
     status              TEXT NOT NULL DEFAULT 'Aberto',
-    atualizado_em       TEXT,
+    atualizado_em       TIMESTAMP,
     FOREIGN KEY (veiculo_id)        REFERENCES veiculos(id),
     FOREIGN KEY (motorista_id)      REFERENCES motoristas(id),
     FOREIGN KEY (checklist_id)      REFERENCES checklists(id) ON DELETE SET NULL,
@@ -113,7 +113,7 @@ CREATE TABLE IF NOT EXISTS ocorrencias (
 );
 
 CREATE TABLE IF NOT EXISTS manutencoes (
-    id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+    id                 SERIAL PRIMARY KEY,
     veiculo_id         INTEGER NOT NULL,
     ocorrencia_id      INTEGER,
     tipo               TEXT NOT NULL DEFAULT 'Preventiva',
@@ -130,7 +130,7 @@ CREATE TABLE IF NOT EXISTS manutencoes (
     data_conclusao     TEXT,
     observacoes        TEXT,
     status             TEXT NOT NULL DEFAULT 'Em andamento',
-    criado_em          TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+    criado_em          TIMESTAMP NOT NULL DEFAULT NOW(),
     FOREIGN KEY (veiculo_id)    REFERENCES veiculos(id),
     FOREIGN KEY (ocorrencia_id) REFERENCES ocorrencias(id) ON DELETE SET NULL
 );
@@ -143,26 +143,28 @@ CREATE INDEX IF NOT EXISTS idx_manutencoes_veiculo ON manutencoes(veiculo_id);
 
 
 def init_db():
-    """Cria as tabelas se ainda não existirem."""
+    """Cria as tabelas no PostgreSQL se ainda não existirem."""
     with get_db() as conn:
-        conn.execute("PRAGMA journal_mode = WAL")
-        conn.execute("PRAGMA foreign_keys = ON")
-        conn.executescript(SCHEMA)
+        with conn.cursor() as cur:
+            cur.execute(SCHEMA)
 
 
 def contar_registros():
     with get_db() as conn:
-        tabelas = conn.execute(
-            "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
-        ).fetchall()
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'"
+            )
+            tabelas = cur.fetchall()
 
-        resultado = {}
-        for t in tabelas:
-            nome_tabela = t["name"] if isinstance(t, dict) or hasattr(t, "keys") else t[0]
-            qtd = conn.execute(f"SELECT COUNT(*) FROM {nome_tabela}").fetchone()[0]
-            resultado[nome_tabela] = qtd
+            resultado = {}
+            for t in tabelas:
+                nome_tabela = t[0]
+                cur.execute(f"SELECT COUNT(*) FROM {nome_tabela}")
+                qtd = cur.fetchone()[0]
+                resultado[nome_tabela] = qtd
 
-        return resultado
+            return resultado
 
 
 if __name__ == "__main__":
