@@ -1,5 +1,4 @@
 import datetime
-import sqlite3
 import pandas as pd
 import streamlit as st
 from database.connection import get_connection
@@ -7,10 +6,9 @@ from database.connection import get_connection
 
 def carregar_dados_dashboard():
     conn = get_connection()
-    conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
 
-    # Contadores de veículos (Consulta original exata)
+    # Contadores de veículos
     qtd_veiculos = cursor.execute(
         "SELECT COUNT(*) FROM veiculos WHERE status != 'Inativo'"
     ).fetchone()[0]
@@ -44,7 +42,7 @@ def carregar_dados_dashboard():
     except Exception:
         pass
 
-    # Custo Total de Manutenção (Lógica exata original)
+    # Custo Total de Manutenção
     custo_total_manut = 0.0
     try:
         df_m_all = pd.read_sql_query("SELECT * FROM manutencoes", conn)
@@ -78,7 +76,7 @@ def carregar_dados_dashboard():
     try:
         df_manutencoes = pd.read_sql_query(
             """
-            SELECT m.id, v.placa, v.modelo, m.servico_realizado AS 'Serviço', m.valor AS 'Valor (R$)', m.status AS 'Status', m.data_conclusao AS 'Data'
+            SELECT m.id, v.placa, v.modelo, m.servico_realizado AS "Serviço", m.valor AS "Valor (R$)", m.status AS "Status", m.data_conclusao AS "Data"
             FROM manutencoes m 
             JOIN veiculos v ON m.veiculo_id = v.id 
             ORDER BY m.id DESC LIMIT 10
@@ -183,10 +181,8 @@ def render_cards_veiculos(df_veiculos):
 def render_dashboard(contar_registros_fn=None):
     st.title("📊 Painel Geral")
 
-    # Carrega os dados reais rigorosamente com as consultas originais
     dados = carregar_dados_dashboard()
 
-    # --- MÉTRICAS NATIVAS SEGURAS (Garante que os números aparecem corretos) ---
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("🚚 Frota Total", dados["veiculos"])
     c2.metric("🏢 Próprios", dados["proprios"])
@@ -206,7 +202,6 @@ def render_dashboard(contar_registros_fn=None):
 
     st.divider()
 
-    # Abas originais intactas
     tab_contratos, tab_rodizio, tab_manut, tab_pendencias = st.tabs([
         "📄 Gestão de Contratos & Frota",
         "🚘 Rodízio Hoje",
