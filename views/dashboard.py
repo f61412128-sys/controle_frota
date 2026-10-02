@@ -1,57 +1,60 @@
 import datetime
 import pandas as pd
+import psycopg2
 import streamlit as st
-from database.connection import get_connection, get_db
 
 
 def carregar_dados_dashboard():
-    with get_db() as conn:
-        with conn.cursor() as cursor:
-            # Contadores de veículos (separando execute e fetchone para psycopg2)
-            cursor.execute("SELECT COUNT(*) FROM veiculos WHERE status != 'Inativo'")
-            res_veiculos = cursor.fetchone()
-            qtd_veiculos = res_veiculos[0] if res_veiculos else 0
+    database_url = st.secrets["DATABASE_URL"]
+    conn = psycopg2.connect(database_url)
+    cursor = conn.cursor()
 
-            cursor.execute(
-                "SELECT COUNT(*) FROM veiculos WHERE status != 'Inativo' AND (LOWER(tipo_propriedade) LIKE '%proprio%' OR LOWER(tipo_propriedade) LIKE '%próprio%')"
-            )
-            res_proprios = cursor.fetchone()
-            qtd_proprios = res_proprios[0] if res_proprios else 0
+    try:
+        # Contadores de veículos
+        cursor.execute("SELECT COUNT(*) FROM veiculos WHERE status != 'Inativo'")
+        res = cursor.fetchone()
+        qtd_veiculos = res[0] if res else 0
 
-            cursor.execute(
-                """
-                SELECT COUNT(*) FROM veiculos 
-                WHERE status != 'Inativo' 
-                  AND (LOWER(tipo_propriedade) LIKE '%alugado%' OR LOWER(tipo_propriedade) LIKE '%terceirizado%' OR LOWER(tipo_propriedade) LIKE '%locado%')
+        cursor.execute(
+            "SELECT COUNT(*) FROM veiculos WHERE status != 'Inativo' AND (LOWER(tipo_propriedade) LIKE '%proprio%' OR LOWER(tipo_propriedade) LIKE '%próprio%')"
+        )
+        res = cursor.fetchone()
+        qtd_proprios = res[0] if res else 0
+
+        cursor.execute(
             """
-            )
-            res_alugados = cursor.fetchone()
-            qtd_alugados = res_alugados[0] if res_alugados else 0
+            SELECT COUNT(*) FROM veiculos 
+            WHERE status != 'Inativo' 
+              AND (LOWER(tipo_propriedade) LIKE '%alugado%' OR LOWER(tipo_propriedade) LIKE '%terceirizado%' OR LOWER(tipo_propriedade) LIKE '%locado%')
+        """
+        )
+        res = cursor.fetchone()
+        qtd_alugados = res[0] if res else 0
 
-            # Motoristas
-            try:
-                cursor.execute("SELECT COUNT(*) FROM motoristas WHERE status = 'Ativo'")
-                res_motoristas = cursor.fetchone()
-                qtd_motoristas = res_motoristas[0] if res_motoristas else 0
-            except Exception:
-                qtd_motoristas = 0
+        # Motoristas
+        try:
+            cursor.execute("SELECT COUNT(*) FROM motoristas WHERE status = 'Ativo'")
+            res = cursor.fetchone()
+            qtd_motoristas = res[0] if res else 0
+        except Exception:
+            qtd_motoristas = 0
 
-            # Manutenções em andamento
-            qtd_manut_andamento = 0
-            try:
-                cursor.execute("SELECT COUNT(*) FROM manutencoes WHERE LOWER(status) LIKE '%andamento%'")
-                res_manut = cursor.fetchone()
-                qtd_manut_andamento = res_manut[0] if res_manut else 0
-            except Exception:
-                pass
+        # Manutenções em andamento
+        qtd_manut_andamento = 0
+        try:
+            cursor.execute("SELECT COUNT(*) FROM manutencoes WHERE LOWER(status) LIKE '%andamento%'")
+            res = cursor.fetchone()
+            qtd_manut_andamento = res[0] if res else 0
+        except Exception:
+            pass
 
-            # Ocorrências pendentes
-            try:
-                cursor.execute("SELECT COUNT(*) FROM ocorrencias WHERE LOWER(status) IN ('pendente', 'aberto', 'em análise')")
-                res_pend = cursor.fetchone()
-                qtd_pendencias = res_pend[0] if res_pend else 0
-            except Exception:
-                qtd_pendencias = 0
+        # Ocorrências pendentes
+        try:
+            cursor.execute("SELECT COUNT(*) FROM ocorrencias WHERE LOWER(status) IN ('pendente', 'aberto', 'em análise')")
+            res = cursor.fetchone()
+            qtd_pendencias = res[0] if res else 0
+        except Exception:
+            qtd_pendencias = 0
 
         # DataFrames via pandas
         try:
@@ -87,6 +90,10 @@ def carregar_dados_dashboard():
             )
         except Exception:
             df_manutencoes = pd.DataFrame()
+
+    finally:
+        cursor.close()
+        conn.close()
 
     # Contratos a vencer
     qtd_contratos_atencao = 0
@@ -187,7 +194,7 @@ def render_dashboard(contar_registros_fn=None):
     c1.metric("🚚 Frota Total", dados["veiculos"])
     c2.metric("🏢 Próprios", dados["proprios"])
     c3.metric("📋 Alugados", dados["alugados"])
-    c4.metric("🛠️️ Em Manutenção", dados["manut_andamento"])
+    c4.metric("🛠 Em Manutenção", dados["manut_andamento"])
 
     c5, c6, c7, c8 = st.columns(4)
     c5.metric("💰 Custo Manutenções", f"R$ {dados['custo_total']:,.2f}")
@@ -246,7 +253,7 @@ def render_dashboard(contar_registros_fn=None):
 
     with tab_pendencias:
         try:
-            conn = get_connection()
+            conn = psycopg2.connect(st.secrets["DATABASE_URL"])
             df_oc = pd.read_sql_query("SELECT o.id, v.placa, o.descricao, o.status FROM ocorrencias o JOIN veiculos v ON o.veiculo_id = v.id WHERE LOWER(o.status) IN ('pendente', 'aberto')", conn)
             conn.close()
             if not df_oc.empty:
