@@ -1,12 +1,11 @@
 import datetime
 import pandas as pd
-import psycopg2
 import streamlit as st
+from database.connection import get_connection
 
 
 def carregar_dados_dashboard():
-    database_url = st.secrets["DATABASE_URL"]
-    conn = psycopg2.connect(database_url)
+    conn = get_connection()
     cursor = conn.cursor()
 
     try:
@@ -126,7 +125,7 @@ def carregar_dados_dashboard():
 
 
 def render_cards_veiculos(df_veiculos):
-    """Renderiza a lista de veículos em formato de cards para telemóvel"""
+    """Renderiza a lista de veículos em formato de cartões elegantes"""
     if df_veiculos.empty:
         st.info("Nenhum veículo encontrado.")
         return
@@ -253,7 +252,7 @@ def render_dashboard(contar_registros_fn=None):
 
     with tab_pendencias:
         try:
-            conn = psycopg2.connect(st.secrets["DATABASE_URL"])
+            conn = get_connection()
             df_oc = pd.read_sql_query("SELECT o.id, v.placa, o.descricao, o.status FROM ocorrencias o JOIN veiculos v ON o.veiculo_id = v.id WHERE LOWER(o.status) IN ('pendente', 'aberto')", conn)
             conn.close()
             if not df_oc.empty:
