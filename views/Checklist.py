@@ -43,11 +43,13 @@ def obter_endereco_reverso(lat_lon_str):
 def salvar_checklist(
     veiculo_id,
     motorista_id,
+    tipo_operacao,
     km,
     itens_respostas,
     observacoes,
     foto_bytes,
     localizacao,
+    usuario_responsavel,
 ):
     # Converte as coordenadas em endereço legível
     localizacao_amigavel = obter_endereco_reverso(localizacao)
@@ -76,6 +78,20 @@ def salvar_checklist(
             except Exception:
                 conn.rollback()
 
+        if "tipo_operacao" not in colunas_chk:
+            try:
+                cursor.execute("ALTER TABLE checklists ADD COLUMN tipo_operacao TEXT")
+                conn.commit()
+            except Exception:
+                conn.rollback()
+
+        if "usuario_responsavel" not in colunas_chk:
+            try:
+                cursor.execute("ALTER TABLE checklists ADD COLUMN usuario_responsavel TEXT")
+                conn.commit()
+            except Exception:
+                conn.rollback()
+
         # 1. Determina resultado geral
         tem_pendencia = any(res == "NÃO OK" for res in itens_respostas.values())
         resultado_geral = "Com pendências" if tem_pendencia else "Aprovado"
@@ -83,18 +99,20 @@ def salvar_checklist(
         # 2. Salva o Checklist e obtém o ID gerado (PostgreSQL utiliza RETURNING id)
         cursor.execute(
             """
-            INSERT INTO checklists (veiculo_id, motorista_id, km, resultado, observacoes, localizacao, foto)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            INSERT INTO checklists (veiculo_id, motorista_id, tipo_operacao, km, resultado, observacoes, localizacao, foto, usuario_responsavel)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id
             """,
             (
                 veiculo_id,
                 motorista_id if motorista_id else 1,
+                tipo_operacao,
                 km,
                 resultado_geral,
                 observacoes,
                 localizacao_amigavel,
                 foto_bytes,
+                usuario_responsavel,
             ),
         )
         checklist_id = cursor.fetchone()[0]
@@ -171,6 +189,18 @@ def buscar_historico_checklists():
             if "localizacao" in colunas_chk
             else "'' AS localizacao"
         )
+        
+        col_op_sql = (
+            "c.tipo_operacao"
+            if "tipo_operacao" in colunas_chk
+            else "'Saída' AS tipo_operacao"
+        )
+        
+        col_resp_sql = (
+            "c.usuario_responsavel"
+            if "usuario_responsavel" in colunas_chk
+            else "NULL AS usuario_responsavel"
+        )
 
         query = f"""
             SELECT 
@@ -180,9 +210,11 @@ def buscar_historico_checklists():
                 c.resultado,
                 c.observacoes,
                 {col_loc_sql},
+                {col_op_sql},
+                {col_resp_sql},
                 v.placa,
                 v.modelo,
-                COALESCE(m.nome, u.nome, 'Não informado') AS motorista_nome
+                COALESCE(c.usuario_responsavel, m.nome, u.nome, 'Não informado') AS motorista_nome
             FROM checklists c
             LEFT JOIN veiculos v ON c.veiculo_id = v.id
             LEFT JOIN motoristas m ON c.motorista_id = m.id
@@ -242,7 +274,7 @@ def render():
             for v in veiculos
         }
 
-        usuario_nome = st.session_state.get("usuario_nome", "Motorista")
+        usuario_nome = st.session_state.get("usuario_nome", st.session_state.get("usuario", "Administrador"))
         motorista_id = st.session_state.get("motorista_id")
 
         # Script JS com alta prioridade e repetição contínua para capturar o GPS rapidamente
@@ -291,8 +323,13 @@ def render():
             veiculo_sel = st.selectbox("Selecione o Veículo*", list(mapa_v.keys()))
             veiculo_id, km_anterior = mapa_v[veiculo_sel]
 
+            tipo_operacao = st.selectbox(
+                "Tipo de Operação*",
+                ["Saída (Retirada do Veículo)", "Entrada (Devolução ao Pátio)"]
+            )
+
             st.text_input(
-                "Motorista Responsável", value=usuario_nome, disabled=True
+                "Responsável pelo Registo", value=usuario_nome, disabled=True
             )
 
             km = st.number_input(
@@ -340,8 +377,6 @@ def render():
             if btn_enviar:
                 foto_bytes = foto.getvalue() if foto else None
 
-                # Bloco de segurança: se o motorista enviou muito rápido e o GPS ainda não respondeu,
-                # damos 2 segundos de folga para a query param atualizar na thread.
                 tentativa = 0
                 loc_atual = st.query_params.get(
                     "gps_auto", "Aguardando sinal de GPS..."
@@ -357,11 +392,13 @@ def render():
                     salvar_checklist(
                         veiculo_id,
                         motorista_id,
+                        tipo_operacao,
                         km,
                         respostas,
                         obs,
                         foto_bytes,
                         loc_atual,
+                        usuario_nome,
                     )
                     st.success(
                         "Checklist registrado e salvo com sucesso no sistema."
@@ -436,14 +473,16 @@ def render():
                 if reg.get("localizacao")
                 else ""
             )
+            op_txt = f" | 🔄 {reg.get('tipo_operacao', 'N/A')}"
 
             titulo_card = (
-                f"{status_icone} {reg['placa']} - {reg['modelo']}{loc_txt} |"
+                f"{status_icone} {reg['placa']} - {reg['modelo']}{op_txt}{loc_txt} |"
                 f" {data_formatada}"
             )
 
             with st.expander(titulo_card):
-                st.write(f"**Motorista:** {reg['motorista_nome']}")
+                st.write(f"**Tipo de Operação:** {reg.get('tipo_operacao', 'N/A')}")
+                st.write(f"**Responsável / Admin:** {reg['motorista_nome']}")
                 st.write(
                     f"**Localização Registrada (GPS):**"
                     f" {reg.get('localizacao', 'Não informada')}"
