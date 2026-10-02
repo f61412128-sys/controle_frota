@@ -161,7 +161,7 @@ else:
             "Gestão de Usuários",
             "Veículos",
             "Motoristas",
-            "Checklist (Teste)",
+            "Checklist",
             "Manutenções",
         ]
 
