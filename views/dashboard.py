@@ -84,73 +84,66 @@ def render_cards_veiculos_estilizados(df_veiculos):
         """, unsafe_allow_html=True)
 
 
+def fetch_table_postgres(query, params=None):
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute(query, params or ())
+        rows = cursor.fetchall()
+        if rows:
+            columns = [desc[0] for desc in cursor.description]
+            df = pd.DataFrame(rows, columns=columns)
+        else:
+            df = pd.DataFrame()
+        cursor.close()
+        conn.close()
+        return df
+    except Exception:
+        return pd.DataFrame()
+
+
 def render_dashboard(contar_registros_fn=None):
-    st.title("📊 Painel Geral (v3.3 - Auto-Detecção)")
+    st.title("📊 Painel Geral (PostgreSQL)")
 
-    conn = get_connection()
-    
-    # Descobrir quais tabelas existem na base de dados
-    tabelas_existentes = []
-    try:
-        df_tables = pd.read_sql_query("SELECT name FROM sqlite_master WHERE type='table';", conn)
-        tabelas_existentes = df_tables['name'].tolist()
-    except Exception:
-        pass
+    # Obter lista de tabelas no PostgreSQL
+    df_tables = fetch_table_postgres(
+        "SELECT table_name FROM information_schema.tables WHERE table_schema='public';"
+    )
+    tabelas_existentes = df_tables['table_name'].tolist() if not df_tables.empty else []
 
-    try:
-        df_veiculos = pd.read_sql_query("SELECT * FROM veiculos", conn)
-    except Exception:
-        df_veiculos = pd.DataFrame()
+    df_veiculos = fetch_table_postgres("SELECT * FROM veiculos")
+    df_manutencoes = fetch_table_postgres("SELECT * FROM manutencoes")
+    df_motoristas = fetch_table_postgres("SELECT * FROM motoristas")
 
-    try:
-        df_manutencoes = pd.read_sql_query("SELECT * FROM manutencoes", conn)
-    except Exception:
-        df_manutencoes = pd.DataFrame()
-
-    try:
-        df_motoristas = pd.read_sql_query("SELECT * FROM motoristas", conn)
-    except Exception:
-        df_motoristas = pd.DataFrame()
-
-    # Procurar dinamicamente por qualquer tabela relacionada com checklists
+    # Procurar tabela de checklists no PostgreSQL
     df_checklists = pd.DataFrame()
-    nome_tabela_chk_encontrada = "Nenhuma"
-    
-    possiveis_nomes_checklist = ['checklists', 'checklist', 'inspecoes', 'historico_checklist', 'checklist_diario', 'vistoria']
-    for t_nome in possiveis_nomes_checklist:
-        if t_nome in tabelas_existentes:
-            try:
-                df_checklists = pd.read_sql_query(f"SELECT * FROM {t_nome}", conn)
-                if not df_checklists.empty:
-                    nome_tabela_chk_encontrada = t_nome
-                    break
-            except Exception:
-                pass
-    
-    # Se ainda estiver vazio mas houver alguma tabela com 'check' ou 'vistor' no nome
+    nome_tabela_chk = "Nenhuma"
+    for t in ['checklists', 'checklist', 'inspecoes', 'historico_checklist', 'checklist_diario', 'vistoria']:
+        if t in tabelas_existentes:
+            df_temp = fetch_table_postgres(f"SELECT * FROM {t}")
+            if not df_temp.empty:
+                df_checklists = df_temp
+                nome_tabela_chk = t
+                break
+
     if df_checklists.empty:
-        for t_nome in tabelas_existentes:
-            if 'check' in t_nome.lower() or 'vistor' in t_nome.lower() or 'inspec' in t_nome.lower():
-                try:
-                    df_checklists = pd.read_sql_query(f"SELECT * FROM {t_nome}", conn)
-                    nome_tabela_chk_encontrada = t_nome
-                    if not df_checklists.empty:
-                        break
-                except Exception:
-                    pass
+        for t in tabelas_existentes:
+            if 'check' in t.lower() or 'vistor' in t.lower() or 'inspec' in t.lower():
+                df_temp = fetch_table_postgres(f"SELECT * FROM {t}")
+                if not df_temp.empty:
+                    df_checklists = df_temp
+                    nome_tabela_chk = t
+                    break
 
     df_contratos = pd.DataFrame()
-    try:
-        df_contratos = pd.read_sql_query("SELECT * FROM contratos", conn)
-    except Exception:
-        try:
-            df_contratos = pd.read_sql_query("SELECT * FROM vencimento_contratos", conn)
-        except Exception:
-            pass
+    for t in ['contratos', 'vencimento_contratos']:
+        if t in tabelas_existentes:
+            df_temp = fetch_table_postgres(f"SELECT * FROM {t}")
+            if not df_temp.empty:
+                df_contratos = df_temp
+                break
 
-    conn.close()
-
-    # Cruzamento com os dados da tabela de checklists encontrada
+    # Cruzamento inteligente com a tabela de checklists
     if not df_veiculos.empty:
         status_list = []
         resp_list = []
@@ -161,9 +154,8 @@ def render_dashboard(contar_registros_fn=None):
 
             df_chk_veiculo = pd.DataFrame()
             if not df_checklists.empty:
-                colunas_possiveis = ['placa', 'veiculo_placa', 'veiculo_id', 'id_veiculo', 'veiculo', 'veiculo_placa']
                 col_encontrada = None
-                for c in colunas_possiveis:
+                for c in ['placa', 'veiculo_placa', 'veiculo_id', 'id_veiculo', 'veiculo']:
                     if c in df_checklists.columns:
                         col_encontrada = c
                         break
@@ -293,7 +285,6 @@ def render_dashboard(contar_registros_fn=None):
 
     st.divider()
 
-    # Abas Principais
     tab_contratos, tab_rodizio, tab_manut, tab_pendencias = st.tabs([
         "📄 Gestão de Contratos & Frota",
         "🚘 Rodízio Hoje",
@@ -330,11 +321,11 @@ def render_dashboard(contar_registros_fn=None):
     with tab_pendencias:
         st.success("Nenhuma ocorrência pendente!")
 
-    # 🔍 Caixa de Diagnóstico atualizada
-    with st.expander("🛠 Diagnóstico da Base de Dados", expanded=True):
-        st.write(f"**Tabelas detetadas na BD:** {tabelas_existentes}")
-        st.write(f"**Tabela de checklist selecionada:** `{nome_tabela_chk_encontrada}` (Registos: {len(df_checklists)})")
+    # Diagnóstico PostgreSQL
+    with st.expander("🛠 Diagnóstico PostgreSQL", expanded=True):
+        st.write(f"**Tabelas detetadas no PostgreSQL:** {tabelas_existentes}")
+        st.write(f"**Tabela de checklist selecionada:** `{nome_tabela_chk}` (Registos: {len(df_checklists)})")
         if not df_checklists.empty:
             st.dataframe(df_checklists, use_container_width=True)
         else:
-            st.warning("Nenhum registo encontrado nas tabelas de checklist analisadas.")
+            st.warning("Nenhum registo encontrado na tabela de checklists do PostgreSQL.")
