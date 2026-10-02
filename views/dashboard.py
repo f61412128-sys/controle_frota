@@ -1,92 +1,92 @@
 import datetime
 import pandas as pd
 import streamlit as st
-from database.connection import get_connection
+from database.connection import get_connection, get_db
 
 
 def carregar_dados_dashboard():
-    conn = get_connection()
-    cursor = conn.cursor()
+    with get_db() as conn:
+        with conn.cursor() as cursor:
+            # Contadores de veículos (separando execute e fetchone para psycopg2)
+            cursor.execute("SELECT COUNT(*) FROM veiculos WHERE status != 'Inativo'")
+            res_veiculos = cursor.fetchone()
+            qtd_veiculos = res_veiculos[0] if res_veiculos else 0
 
-    # Contadores de veículos
-    qtd_veiculos = cursor.execute(
-        "SELECT COUNT(*) FROM veiculos WHERE status != 'Inativo'"
-    ).fetchone()[0]
-
-    qtd_proprios = cursor.execute(
-        "SELECT COUNT(*) FROM veiculos WHERE status != 'Inativo' AND (LOWER(tipo_propriedade) LIKE '%proprio%' OR LOWER(tipo_propriedade) LIKE '%próprio%')"
-    ).fetchone()[0]
-
-    qtd_alugados = cursor.execute(
-        """
-        SELECT COUNT(*) FROM veiculos 
-        WHERE status != 'Inativo' 
-          AND (LOWER(tipo_propriedade) LIKE '%alugado%' OR LOWER(tipo_propriedade) LIKE '%terceirizado%' OR LOWER(tipo_propriedade) LIKE '%locado%')
-    """
-    ).fetchone()[0]
-
-    # Motoristas
-    try:
-        qtd_motoristas = cursor.execute(
-            "SELECT COUNT(*) FROM motoristas WHERE status = 'Ativo'"
-        ).fetchone()[0]
-    except Exception:
-        qtd_motoristas = 0
-
-    # Manutenções em andamento
-    qtd_manut_andamento = 0
-    try:
-        qtd_manut_andamento = cursor.execute(
-            "SELECT COUNT(*) FROM manutencoes WHERE LOWER(status) LIKE '%andamento%'"
-        ).fetchone()[0]
-    except Exception:
-        pass
-
-    # Custo Total de Manutenção
-    custo_total_manut = 0.0
-    try:
-        df_m_all = pd.read_sql_query("SELECT * FROM manutencoes", conn)
-        if not df_m_all.empty and "valor" in df_m_all.columns:
-            valores_limpos = pd.to_numeric(
-                df_m_all["valor"].astype(str).str.replace('R$', '', regex=True).str.replace('.', '', regex=False).str.replace(',', '.', regex=False),
-                errors='coerce'
+            cursor.execute(
+                "SELECT COUNT(*) FROM veiculos WHERE status != 'Inativo' AND (LOWER(tipo_propriedade) LIKE '%proprio%' OR LOWER(tipo_propriedade) LIKE '%próprio%')"
             )
-            custo_total_manut = float(valores_limpos.sum())
-    except Exception:
-        custo_total_manut = 0.0
+            res_proprios = cursor.fetchone()
+            qtd_proprios = res_proprios[0] if res_proprios else 0
 
-    # Ocorrências pendentes
-    try:
-        qtd_pendencias = cursor.execute(
-            "SELECT COUNT(*) FROM ocorrencias WHERE LOWER(status) IN ('pendente', 'aberto', 'em análise')"
-        ).fetchone()[0]
-    except Exception:
-        qtd_pendencias = 0
-
-    # Veículos completo
-    try:
-        df_veiculos_completo = pd.read_sql_query(
-            "SELECT placa, marca, modelo, tipo_propriedade, locadora, inicio_contrato, fim_contrato, valor_mensal, status FROM veiculos WHERE status != 'Inativo'",
-            conn,
-        )
-    except Exception:
-        df_veiculos_completo = pd.DataFrame()
-
-    # Manutenções recentes formatadas
-    try:
-        df_manutencoes = pd.read_sql_query(
+            cursor.execute(
+                """
+                SELECT COUNT(*) FROM veiculos 
+                WHERE status != 'Inativo' 
+                  AND (LOWER(tipo_propriedade) LIKE '%alugado%' OR LOWER(tipo_propriedade) LIKE '%terceirizado%' OR LOWER(tipo_propriedade) LIKE '%locado%')
             """
-            SELECT m.id, v.placa, v.modelo, m.servico_realizado AS "Serviço", m.valor AS "Valor (R$)", m.status AS "Status", m.data_conclusao AS "Data"
-            FROM manutencoes m 
-            JOIN veiculos v ON m.veiculo_id = v.id 
-            ORDER BY m.id DESC LIMIT 10
-            """,
-            conn,
-        )
-    except Exception:
-        df_manutencoes = pd.DataFrame()
+            )
+            res_alugados = cursor.fetchone()
+            qtd_alugados = res_alugados[0] if res_alugados else 0
 
-    conn.close()
+            # Motoristas
+            try:
+                cursor.execute("SELECT COUNT(*) FROM motoristas WHERE status = 'Ativo'")
+                res_motoristas = cursor.fetchone()
+                qtd_motoristas = res_motoristas[0] if res_motoristas else 0
+            except Exception:
+                qtd_motoristas = 0
+
+            # Manutenções em andamento
+            qtd_manut_andamento = 0
+            try:
+                cursor.execute("SELECT COUNT(*) FROM manutencoes WHERE LOWER(status) LIKE '%andamento%'")
+                res_manut = cursor.fetchone()
+                qtd_manut_andamento = res_manut[0] if res_manut else 0
+            except Exception:
+                pass
+
+            # Ocorrências pendentes
+            try:
+                cursor.execute("SELECT COUNT(*) FROM ocorrencias WHERE LOWER(status) IN ('pendente', 'aberto', 'em análise')")
+                res_pend = cursor.fetchone()
+                qtd_pendencias = res_pend[0] if res_pend else 0
+            except Exception:
+                qtd_pendencias = 0
+
+        # DataFrames via pandas
+        try:
+            df_m_all = pd.read_sql_query("SELECT * FROM manutencoes", conn)
+            if not df_m_all.empty and "valor" in df_m_all.columns:
+                valores_limpos = pd.to_numeric(
+                    df_m_all["valor"].astype(str).str.replace('R$', '', regex=True).str.replace('.', '', regex=False).str.replace(',', '.', regex=False),
+                    errors='coerce'
+                )
+                custo_total_manut = float(valores_limpos.sum())
+            else:
+                custo_total_manut = 0.0
+        except Exception:
+            custo_total_manut = 0.0
+
+        try:
+            df_veiculos_completo = pd.read_sql_query(
+                "SELECT placa, marca, modelo, tipo_propriedade, locadora, inicio_contrato, fim_contrato, valor_mensal, status FROM veiculos WHERE status != 'Inativo'",
+                conn,
+            )
+        except Exception:
+            df_veiculos_completo = pd.DataFrame()
+
+        try:
+            df_manutencoes = pd.read_sql_query(
+                """
+                SELECT m.id, v.placa, v.modelo, m.servico_realizado AS "Serviço", m.valor AS "Valor (R$)", m.status AS "Status", m.data_conclusao AS "Data"
+                FROM manutencoes m 
+                JOIN veiculos v ON m.veiculo_id = v.id 
+                ORDER BY m.id DESC LIMIT 10
+                """,
+                conn,
+            )
+        except Exception:
+            df_manutencoes = pd.DataFrame()
 
     # Contratos a vencer
     qtd_contratos_atencao = 0
@@ -187,7 +187,7 @@ def render_dashboard(contar_registros_fn=None):
     c1.metric("🚚 Frota Total", dados["veiculos"])
     c2.metric("🏢 Próprios", dados["proprios"])
     c3.metric("📋 Alugados", dados["alugados"])
-    c4.metric("🛠️ Em Manutenção", dados["manut_andamento"])
+    c4.metric("🛠️️ Em Manutenção", dados["manut_andamento"])
 
     c5, c6, c7, c8 = st.columns(4)
     c5.metric("💰 Custo Manutenções", f"R$ {dados['custo_total']:,.2f}")
