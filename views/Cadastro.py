@@ -37,15 +37,15 @@ def render_veiculos():
         motoristas = listar_motoristas()
         opcoes_motoristas = {m["nome"]: m["id"] for m in motoristas}
 
-        # SELETOR FORA DO FORMULÁRIO PARA PERMITIR REATIVIDADE INSTANTÂNEA
-        tipo_propriedade = st.radio(
-            "Propriedade do Veículo",
-            ["Próprio", "Alugado"],
-            horizontal=True,
-            key="radio_propriedade_novo",
-        )
-
         with st.form("form_veiculo", clear_on_submit=True):
+            # RÁDIO DENTRO DO FORMULÁRIO
+            tipo_propriedade = st.radio(
+                "Propriedade do Veículo",
+                ["Próprio", "Alugado"],
+                horizontal=True,
+                key="radio_propriedade_novo",
+            )
+
             col1, col2, col3 = st.columns(3)
             placa = col1.text_input("Placa do Veículo*")
             marca = col2.text_input("Marca")
@@ -137,17 +137,18 @@ def render_veiculos():
             )
             v_dados = opcoes_v[v_selecionado_str]
 
-            # SELETOR FORA DO FORMULÁRIO PARA REATIVIDADE INSTANTÂNEA DA LOCAÇÃO
-            prop_atual = v_dados.get("tipo_propriedade") or "Próprio"
-            v_tipo_propriedade = st.radio(
-                "Propriedade do Veículo",
-                ["Próprio", "Alugado"],
-                index=0 if prop_atual == "Próprio" else 1,
-                horizontal=True,
-                key="radio_propriedade_edit",
-            )
-
             with st.form("form_editar_veiculo"):
+                # RÁDIO DENTRO DO FORMULÁRIO PARA CAPTURAR CORRETAMENTE O VALOR
+                prop_atual = v_dados.get("tipo_propriedade") or "Próprio"
+                idx_prop = 0 if prop_atual == "Próprio" else 1
+                v_tipo_propriedade = st.radio(
+                    "Propriedade do Veículo",
+                    ["Próprio", "Alugado"],
+                    index=idx_prop,
+                    horizontal=True,
+                    key="radio_propriedade_edit",
+                )
+
                 col1, col2, col3 = st.columns(3)
                 v_placa = col1.text_input(
                     "Placa*", value=v_dados.get("placa") or ""
@@ -192,6 +193,7 @@ def render_veiculos():
                     "Chassi", value=v_dados.get("chassi") or ""
                 )
 
+                # CAMPOS CONDICIONAIS DE LOCAÇÃO DENTRO DO FORMULÁRIO
                 v_locadora, v_inicio_contrato, v_fim_contrato, v_valor_mensal = None, None, None, 0.0
                 if v_tipo_propriedade == "Alugado":
                     st.markdown("---")
