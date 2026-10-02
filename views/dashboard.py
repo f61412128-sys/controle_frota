@@ -63,13 +63,16 @@ def render_cards_veiculos_estilizados(df_veiculos):
         modelo = str(row.get('modelo', 'N/A'))
         tipo = str(row.get('tipo_propriedade', row.get('tipo', 'N/A')))
         
-        status_disp = row.get('status_disponibilidade', 'Indisponível')
+        status_disp = row.get('status_disponibilidade', 'Disponível')
         ultimo_resp = row.get('ultimo_responsavel', 'Sem registo')
+        tipo_mov = row.get('ultimo_tipo_movimento', '')
         
         if status_disp == 'Disponível':
-            badge_html = '<span class="badge-disponivel">🟢 Disponível</span>'
+            badge_html = '<span class="badge-disponivel">🟢 Disponível (No Pátio)</span>'
         else:
-            badge_html = '<span class="badge-indisponivel">🔴 Indisponível</span>'
+            badge_html = '<span class="badge-indisponivel">🔴 Em Uso / Indisponível</span>'
+
+        mov_text = f" ({tipo_mov})" if tipo_mov else ""
 
         st.markdown(f"""
             <div class="veiculo-card">
@@ -79,7 +82,7 @@ def render_cards_veiculos_estilizados(df_veiculos):
                 </div>
                 <div class="veiculo-info">Modelo: <span>{modelo}</span></div>
                 <div class="veiculo-info">Tipo: <span>{tipo}</span></div>
-                <div class="veiculo-info">Último Checklist por: <span>{ultimo_resp}</span></div>
+                <div class="veiculo-info">Último Registo{mov_text}: <span>{ultimo_resp}</span></div>
             </div>
         """, unsafe_allow_html=True)
 
@@ -106,40 +109,38 @@ def ler_tabela_direta(query):
 def render_dashboard(contar_registros_fn=None):
     st.title("📊 Painel Geral da Frota")
 
-    # Descobrir todas as tabelas existentes no PostgreSQL
     df_tables = ler_tabela_direta("SELECT table_name FROM information_schema.tables WHERE table_schema='public';")
     tabelas_existentes = df_tables['table_name'].tolist() if not df_tables.empty else []
 
-    # Carregar veículos, manutenções e motoristas
     df_veiculos = ler_tabela_direta("SELECT * FROM veiculos") if 'veiculos' in tabelas_existentes else pd.DataFrame()
     df_manutencoes = ler_tabela_direta("SELECT * FROM manutencoes") if 'manutencoes' in tabelas_existentes else pd.DataFrame()
     df_motoristas = ler_tabela_direta("SELECT * FROM motoristas") if 'motoristas' in tabelas_existentes else pd.DataFrame()
+    df_usuarios = ler_tabela_direta("SELECT * FROM usuarios") if 'usuarios' in tabelas_existentes else pd.DataFrame()
 
-    # Carregar tabela de checklists
     df_checklists = pd.DataFrame()
     tabela_checklists_encontrada = "Nenhuma"
     
-    candidatos_tabelas = ['checklists', 'checklist', 'historico_checklists', 'inspecoes', 'vistoria', 'vistorias']
-    for t in candidatos_tabelas:
+    for t in ['checklists', 'checklist', 'historico_checklists', 'inspecoes']:
         if t in tabelas_existentes:
             df_temp = ler_tabela_direta(f"SELECT * FROM {t}")
             if not df_temp.empty:
                 df_checklists = df_temp
                 tabela_checklists_encontrada = t
                 break
-    
+
     if df_checklists.empty:
         for t in tabelas_existentes:
             df_temp = ler_tabela_direta(f"SELECT * FROM {t}")
-            if not df_temp.empty and any(k in t.lower() for k in ['check', 'insp', 'vist', 'reg']):
+            if not df_temp.empty and any(k in t.lower() for k in ['check', 'insp', 'vist']):
                 df_checklists = df_temp
                 tabela_checklists_encontrada = t
                 break
 
-    # Cruzamento corrigido de checklists com os veículos usando 'veiculo_id' e 'data_hora'
+    # Cruzamento inteligente de checklists (Entrada/Saída e Responsável/Admin)
     if not df_veiculos.empty:
         status_list = []
         resp_list = []
+        tipo_mov_list = []
 
         for _, v_row in df_veiculos.iterrows():
             v_id = v_row.get('id')
@@ -164,27 +165,62 @@ def render_dashboard(contar_registros_fn=None):
 
                 ult_chk = df_chk_veiculo.iloc[0]
 
-                # Tenta identificar o nome do motorista associado ao registo
-                resp = "Motorista"
-                motorista_id = ult_chk.get('motorista_id')
-                if motorista_id is not None and not df_motoristas.empty and 'id' in df_motoristas.columns:
-                    m_match = df_motoristas[df_motoristas['id'] == motorista_id]
-                    if not m_match.empty:
-                        resp = str(m_match.iloc[0].get('nome', 'Motorista'))
+                # Tenta descobrir o responsável (procurando em motoristas, usuarios ou colunas de texto direto)
+                resp = "Administrador / Sistema"
+                for col_resp in ['responsavel', 'usuario_responsavel', 'nome_responsavel']:
+                    if col_resp in ult_chk and pd.notna(ult_chk[col_resp]):
+                        resp = str(ult_chk[col_resp])
+                        break
+                
+                if resp == "Administrador / Sistema" or resp.isdigit():
+                    # Tenta procurar por IDs (usuario_id, motorista_id, admin_id)
+                    for id_col in ['usuario_id', 'admin_id', 'criado_por_id']:
+                        if id_col in ult_chk and pd.notna(ult_chk[id_col]) and not df_usuarios.empty and 'id' in df_usuarios.columns:
+                            u_match = df_usuarios[df_usuarios['id'] == ult_chk[id_col]]
+                            if not u_match.empty:
+                                resp = str(u_match.iloc[0].get('nome', u_match.iloc[0].get('usuario', 'Admin')))
+                                break
 
-                status_list.append("Disponível")
+                if resp == "Administrador / Sistema" or resp.isdigit():
+                    motorista_id = ult_chk.get('motorista_id')
+                    if motorista_id is not None and not df_motoristas.empty and 'id' in df_motoristas.columns:
+                        m_match = df_motoristas[df_motoristas['id'] == motorista_id]
+                        if not m_match.empty:
+                            resp = str(m_match.iloc[0].get('nome', 'Motorista'))
+
+                # Detetar se é Saída ou Entrada
+                tipo_mov = ""
+                for col_tipo in ['tipo_operacao', 'tipo_movimento', 'operacao', 'movimento', 'fluxo']:
+                    if col_tipo in ult_chk and pd.notna(ult_chk[col_tipo]):
+                        tipo_mov = str(ult_chk[col_tipo])
+                        break
+
+                tipo_mov_lower = tipo_mov.lower()
+                if any(k in tipo_mov_lower for k in ['saida', 'retirada', 'saída', 'uso']):
+                    status_disp = "Indisponível"
+                elif any(k in tipo_mov_lower for k in ['entrada', 'devolucao', 'devolução', 'retorno', 'chegada']):
+                    status_disp = "Disponível"
+                else:
+                    # Comportamento padrão se não especificado explicitamente
+                    status_disp = "Disponível"
+
+                status_list.append(status_disp)
                 resp_list.append(resp)
+                tipo_mov_list.append(tipo_mov if tipo_mov else "Registo Geral")
             else:
-                status_list.append("Indisponível")
+                status_list.append("Disponível")
                 resp_list.append("Sem checklist recente")
+                tipo_mov_list.append("")
 
         df_veiculos['status_disponibilidade'] = status_list
         df_veiculos['ultimo_responsavel'] = resp_list
+        df_veiculos['ultimo_tipo_movimento'] = tipo_mov_list
     else:
-        df_veiculos['status_disponibilidade'] = "Indisponível"
+        df_veiculos['status_disponibilidade'] = "Disponível"
         df_veiculos['ultimo_responsavel'] = "N/A"
+        df_veiculos['ultimo_tipo_movimento'] = ""
 
-    # Cálculos gerais de custos
+    # Métricas e separação de alugados / próprios
     custo_total_manut = 0.0
     if not df_manutencoes.empty:
         for col_val in ['valor', 'custo', 'preco', 'valor_total']:
@@ -225,7 +261,6 @@ def render_dashboard(contar_registros_fn=None):
     total_motoristas = len(df_motoristas) if not df_motoristas.empty else 0
     total_manut = len(df_manutencoes)
 
-    # Métricas do Dashboard
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("🚚 Frota Total", total_veiculos)
     c2.metric("🏢 Próprios", total_proprios)
@@ -272,7 +307,6 @@ def render_dashboard(contar_registros_fn=None):
     with tab_pendencias:
         st.success("Nenhuma ocorrência pendente!")
 
-    # Caixa de Diagnóstico Avançada
     with st.expander("🛠 Diagnóstico de Tabelas e Registos", expanded=False):
         st.write(f"**Tabelas detetadas no PostgreSQL:** {tabelas_existentes}")
         st.write(f"**Tabela de checklists identificada:** `{tabela_checklists_encontrada}`")
