@@ -1,4 +1,4 @@
-from database.connection import get_db
+from database.connection import get_connection
 
 STATUS_VEICULO = ["Disponível", "Em viagem", "Em manutenção", "Inativo"]
 STATUS_MOTORISTA = ["Ativo", "Inativo"]
@@ -48,24 +48,24 @@ CREATE TABLE IF NOT EXISTS usuarios (
 );
 
 CREATE TABLE IF NOT EXISTS veiculos (
-    id                   SERIAL PRIMARY KEY,
-    placa                TEXT NOT NULL UNIQUE,
-    marca                TEXT NOT NULL,
-    modelo               TEXT NOT NULL,
-    ano                  INTEGER,
-    tipo                 TEXT,
-    cor                  TEXT,
-    chassi               TEXT,
-    km_atual             INTEGER NOT NULL DEFAULT 0,
-    motorista_id         INTEGER,
-    status               TEXT NOT NULL DEFAULT 'Disponível',
-    tipo_propriedade     TEXT NOT NULL DEFAULT 'Próprio',
-    locadora             TEXT,
-    inicio_contrato      TEXT,
-    fim_contrato         TEXT,
-    valor_mensal         REAL DEFAULT 0.0,
-    foto_path            TEXT,
-    criado_em            TIMESTAMP NOT NULL DEFAULT NOW(),
+    id                     SERIAL PRIMARY KEY,
+    placa                  TEXT NOT NULL UNIQUE,
+    marca                  TEXT NOT NULL,
+    modelo                 TEXT NOT NULL,
+    ano                    INTEGER,
+    tipo                   TEXT,
+    cor                    TEXT,
+    chassi                 TEXT,
+    km_atual               INTEGER NOT NULL DEFAULT 0,
+    motorista_id           INTEGER,
+    status                 TEXT NOT NULL DEFAULT 'Disponível',
+    tipo_propriedade       TEXT NOT NULL DEFAULT 'Próprio',
+    locadora               TEXT,
+    inicio_contrato        TEXT,
+    fim_contrato           TEXT,
+    valor_mensal           REAL DEFAULT 0.0,
+    foto_path              TEXT,
+    criado_em              TIMESTAMP NOT NULL DEFAULT NOW(),
     FOREIGN KEY (motorista_id) REFERENCES motoristas(id) ON DELETE SET NULL
 );
 
@@ -92,20 +92,20 @@ CREATE TABLE IF NOT EXISTS itens_checklist (
 );
 
 CREATE TABLE IF NOT EXISTS ocorrencias (
-    id                  SERIAL PRIMARY KEY,
-    veiculo_id          INTEGER NOT NULL,
-    motorista_id        INTEGER NOT NULL,
-    checklist_id        INTEGER,
-    item_checklist_id   INTEGER,
-    data_hora           TIMESTAMP NOT NULL DEFAULT NOW(),
-    km                  INTEGER,
-    categoria           TEXT,
-    item                TEXT NOT NULL,
-    descricao           TEXT NOT NULL,
-    gravidade           TEXT NOT NULL DEFAULT 'Média',
-    foto_path           TEXT,
-    status              TEXT NOT NULL DEFAULT 'Aberto',
-    atualizado_em       TIMESTAMP,
+    id                    SERIAL PRIMARY KEY,
+    veiculo_id            INTEGER NOT NULL,
+    motorista_id          INTEGER NOT NULL,
+    checklist_id          INTEGER,
+    item_checklist_id     INTEGER,
+    data_hora             TIMESTAMP NOT NULL DEFAULT NOW(),
+    km                    INTEGER,
+    categoria             TEXT,
+    item                  TEXT NOT NULL,
+    descricao             TEXT NOT NULL,
+    gravidade             TEXT NOT NULL DEFAULT 'Média',
+    foto_path             TEXT,
+    status                TEXT NOT NULL DEFAULT 'Aberto',
+    atualizado_em         TIMESTAMP,
     FOREIGN KEY (veiculo_id)        REFERENCES veiculos(id),
     FOREIGN KEY (motorista_id)      REFERENCES motoristas(id),
     FOREIGN KEY (checklist_id)      REFERENCES checklists(id) ON DELETE SET NULL,
@@ -113,24 +113,24 @@ CREATE TABLE IF NOT EXISTS ocorrencias (
 );
 
 CREATE TABLE IF NOT EXISTS manutencoes (
-    id                 SERIAL PRIMARY KEY,
-    veiculo_id         INTEGER NOT NULL,
-    ocorrencia_id      INTEGER,
-    tipo               TEXT NOT NULL DEFAULT 'Preventiva',
-    problema           TEXT NOT NULL,
-    data_entrada       TEXT NOT NULL,
-    km                 INTEGER,
-    oficina            TEXT,
-    responsavel        TEXT,
-    pecas_utilizadas   TEXT,
-    servico_realizado  TEXT,
-    valor              REAL DEFAULT 0.0,
-    proxima_data       TEXT,
-    proximo_km         INTEGER,
-    data_conclusao     TEXT,
-    observacoes        TEXT,
-    status             TEXT NOT NULL DEFAULT 'Em andamento',
-    criado_em          TIMESTAMP NOT NULL DEFAULT NOW(),
+    id                   SERIAL PRIMARY KEY,
+    veiculo_id           INTEGER NOT NULL,
+    ocorrencia_id        INTEGER,
+    tipo                 TEXT NOT NULL DEFAULT 'Preventiva',
+    problema             TEXT NOT NULL,
+    data_entrada         TEXT NOT NULL,
+    km                   INTEGER,
+    oficina              TEXT,
+    responsavel          TEXT,
+    pecas_utilizadas     TEXT,
+    servico_realizado    TEXT,
+    valor                REAL DEFAULT 0.0,
+    proxima_data         TEXT,
+    proximo_km           INTEGER,
+    data_conclusao       TEXT,
+    observacoes          TEXT,
+    status               TEXT NOT NULL DEFAULT 'Em andamento',
+    criado_em            TIMESTAMP NOT NULL DEFAULT NOW(),
     FOREIGN KEY (veiculo_id)    REFERENCES veiculos(id),
     FOREIGN KEY (ocorrencia_id) REFERENCES ocorrencias(id) ON DELETE SET NULL
 );
@@ -144,13 +144,18 @@ CREATE INDEX IF NOT EXISTS idx_manutencoes_veiculo ON manutencoes(veiculo_id);
 
 def init_db():
     """Cria as tabelas no PostgreSQL se ainda não existirem."""
-    with get_db() as conn:
+    conn = get_connection()
+    try:
         with conn.cursor() as cur:
             cur.execute(SCHEMA)
+            conn.commit()
+    finally:
+        conn.close()
 
 
 def contar_registros():
-    with get_db() as conn:
+    conn = get_connection()
+    try:
         with conn.cursor() as cur:
             cur.execute(
                 "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'"
@@ -165,6 +170,8 @@ def contar_registros():
                 resultado[nome_tabela] = qtd
 
             return resultado
+    finally:
+        conn.close()
 
 
 if __name__ == "__main__":
