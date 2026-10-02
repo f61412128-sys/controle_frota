@@ -4,22 +4,68 @@ import streamlit as st
 from database.connection import get_connection
 
 
+def render_cards_veiculos_original(df_veiculos):
+    if df_veiculos.empty:
+        st.info("Nenhum veículo registado nesta secção.")
+        return
+
+    st.markdown("""
+        <style>
+        .veiculo-card {
+            background-color: #111827;
+            border: 1px solid #1f2937;
+            border-left: 4px solid #3b82f6;
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 10px;
+        }
+        .veiculo-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 6px;
+        }
+        .veiculo-placa {
+            font-size: 15px;
+            font-weight: bold;
+            color: #ffffff;
+        }
+        .veiculo-info {
+            font-size: 12px;
+            color: #9ca3af;
+            margin-bottom: 2px;
+        }
+        .veiculo-info span {
+            color: #f3f4f6;
+            font-weight: 500;
+        }
+        </style>
+    """, unsafe_allow_html=True)
+
+    for _, row in df_veiculos.iterrows():
+        placa = str(row.get('placa', 'N/A'))
+        modelo = str(row.get('modelo', 'N/A'))
+        tipo = str(row.get('tipo_propriedade', row.get('tipo', 'N/A')))
+        
+        st.markdown(f"""
+            <div class="veiculo-card">
+                <div class="veiculo-header">
+                    <span class="veiculo-placa">🚗 {placa}</span>
+                </div>
+                <div class="veiculo-info">Modelo: <span>{modelo}</span></div>
+                <div class="veiculo-info">Tipo: <span>{tipo}</span></div>
+            </div>
+        """, unsafe_allow_html=True)
+
+
 def render_dashboard(contar_registros_fn=None):
-    st.title("📊 Painel Geral (v2.0 - Atualizado)")
+    st.title("📊 Painel Geral")
 
     conn = get_connection()
-    cursor = conn.cursor()
-
-    # Leitura direta e segura de todas as tabelas
     try:
         df_veiculos = pd.read_sql_query("SELECT * FROM veiculos", conn)
     except Exception:
         df_veiculos = pd.DataFrame()
-
-    try:
-        df_checklists = pd.read_sql_query("SELECT * FROM checklists", conn)
-    except Exception:
-        df_checklists = pd.DataFrame()
 
     try:
         df_manutencoes = pd.read_sql_query("SELECT * FROM manutencoes", conn)
@@ -33,23 +79,16 @@ def render_dashboard(contar_registros_fn=None):
 
     conn.close()
 
-    # Processamento de Próprios vs Alugados de forma robusta
-    if not df_veiculos.empty:
-        # Normalizar colunas de tipo/posse
-        col_tipo = next((c for c in df_veiculos.columns if any(termo in c.lower() for termo in ['tipo', 'categoria', 'posse', 'classificacao'])), None)
-        
-        if col_tipo:
-            mask_alug = df_veiculos[col_tipo].astype(str).str.lower().str.contains("alugado|terceirizado|locado|terceiro|frota alugada|terc", na=False)
-            df_alugados = df_veiculos[mask_alug].copy()
-            df_proprios = df_veiculos[~mask_alug].copy()
-        else:
-            # Se não houver coluna clara, divide os dados ao meio para teste
-            meio = len(df_veiculos) // 2
-            df_alugados = df_veiculos.iloc[:meio].copy() if meio > 0 else df_veiculos.copy()
-            df_proprios = df_veiculos.iloc[meio:].copy() if meio > 0 else pd.DataFrame()
-    else:
-        df_alugados = pd.DataFrame()
-        df_proprios = pd.DataFrame()
+    # Separação exata usando a coluna tipo_propriedade vista no diagnóstico
+    df_alugados = pd.DataFrame()
+    df_proprios = pd.DataFrame()
+
+    if not df_veiculos.empty and 'tipo_propriedade' in df_veiculos.columns:
+        mask_prop = df_veiculos['tipo_propriedade'].astype(str).str.lower().str.contains("próprio|proprio", na=False)
+        df_proprios = df_veiculos[mask_prop].copy()
+        df_alugados = df_veiculos[~mask_prop].copy()
+    elif not df_veiculos.empty:
+        df_alugados = df_veiculos.copy()
 
     total_veiculos = len(df_veiculos)
     total_proprios = len(df_proprios)
@@ -72,7 +111,6 @@ def render_dashboard(contar_registros_fn=None):
 
     st.divider()
 
-    # Abas principais
     tab_contratos, tab_rodizio, tab_manut, tab_pendencias = st.tabs([
         "📄 Gestão de Contratos & Frota",
         "🚘 Rodízio Hoje",
@@ -85,39 +123,11 @@ def render_dashboard(contar_registros_fn=None):
 
         with sub_alug:
             st.markdown("##### Veículos Alugados / Terceirizados")
-            if not df_alugados.empty:
-                for _, row in df_alugados.iterrows():
-                    placa = row.get('placa', 'N/A')
-                    modelo = row.get('modelo', 'N/A')
-                    tipo = row.get('tipo', 'Alugado')
-                    locadora = row.get('locadora', 'N/A')
-                    st.markdown(f"""
-                        <div style="background-color: #111827; border: 1px solid #1f2937; border-left: 4px solid #3b82f6; padding: 12px; border-radius: 8px; margin-bottom: 10px;">
-                            <div style="font-size: 15px; font-weight: bold; color: #ffffff;">🚗 {placa}</div>
-                            <div style="font-size: 12px; color: #9ca3af;">Modelo: <span style="color: #f3f4f6;">{modelo}</span></div>
-                            <div style="font-size: 12px; color: #9ca3af;">Tipo: <span style="color: #f3f4f6;">{tipo}</span></div>
-                            <div style="font-size: 12px; color: #9ca3af;">Locadora: <span style="color: #f3f4f6;">{locadora}</span></div>
-                        </div>
-                    """, unsafe_allow_html=True)
-            else:
-                st.info("Nenhum veículo alugado registado.")
+            render_cards_veiculos_original(df_alugados)
 
         with sub_prop:
             st.markdown("##### Veículos Próprios")
-            if not df_proprios.empty:
-                for _, row in df_proprios.iterrows():
-                    placa = row.get('placa', 'N/A')
-                    modelo = row.get('modelo', 'N/A')
-                    tipo = row.get('tipo', 'Próprio')
-                    st.markdown(f"""
-                        <div style="background-color: #111827; border: 1px solid #1f2937; border-left: 4px solid #10b981; padding: 12px; border-radius: 8px; margin-bottom: 10px;">
-                            <div style="font-size: 15px; font-weight: bold; color: #ffffff;">🏢 {placa}</div>
-                            <div style="font-size: 12px; color: #9ca3af;">Modelo: <span style="color: #f3f4f6;">{modelo}</span></div>
-                            <div style="font-size: 12px; color: #9ca3af;">Tipo: <span style="color: #f3f4f6;">{tipo}</span></div>
-                        </div>
-                    """, unsafe_allow_html=True)
-            else:
-                st.info("Nenhum veículo próprio registado.")
+            render_cards_veiculos_original(df_proprios)
 
     with tab_rodizio:
         st.markdown("##### Consulta de Rodízio (SP)")
@@ -136,9 +146,3 @@ def render_dashboard(contar_registros_fn=None):
 
     with tab_pendencias:
         st.success("Nenhuma ocorrência pendente!")
-
-    with st.expander("🔍 Diagnóstico Completo da Base de Dados", expanded=True):
-        st.write("--- Veículos ---")
-        st.dataframe(df_veiculos, use_container_width=True)
-        st.write("--- Checklists Registados ---")
-        st.dataframe(df_checklists, use_container_width=True)
