@@ -1,27 +1,31 @@
-import sqlite3
 from contextlib import contextmanager
-
-from config import DB_PATH, garantir_pastas
+import pandas as pd
+import psycopg2
+import streamlit as st
 
 
 def get_connection():
-    """Abre uma conexão nova com o banco."""
-    garantir_pastas()
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row          # permite acessar colunas por nome
-    conn.execute("PRAGMA foreign_keys = ON")  # ativa chaves estrangeiras
-    return conn
+    """Abre uma conexão nova com o PostgreSQL no Supabase utilizando os Secrets do Streamlit."""
+    try:
+        # Tenta buscar a URL do Supabase configurada nos Secrets do Streamlit
+        database_url = st.secrets["DATABASE_URL"]
+    except Exception:
+        # Fallback caso esteja a rodar localmente e queira testar com outra string ou SQLite
+        database_url = None
+
+    if database_url:
+        # Conexão oficial com o Supabase/PostgreSQL
+        conn = psycopg2.connect(database_url)
+        return conn
+    else:
+        raise RuntimeError(
+            "DATABASE_URL não encontrada nos Secrets do Streamlit Cloud!"
+        )
 
 
 @contextmanager
 def get_db():
-    """
-    Uso:
-        with get_db() as conn:
-            conn.execute(...)
-    Salva (commit) se tudo der certo, desfaz (rollback) se der erro,
-    e sempre fecha a conexão.
-    """
+    """Context manager para gerenciar transações com o Supabase."""
     conn = get_connection()
     try:
         yield conn
