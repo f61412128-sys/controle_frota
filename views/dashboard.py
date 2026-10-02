@@ -68,10 +68,10 @@ def carregar_dados_dashboard():
         except Exception:
             df_veiculos_completo = pd.DataFrame()
 
-        # Enriquecer cada veículo com status de checklist e motorista responsável
+        # Enriquecer cada veículo com o status real do último checklist e o nome do motorista
         if not df_veiculos_completo.empty:
-            df_veiculos_completo["status_checklist"] = "Disponível"
-            df_veiculos_completo["motorista_responsavel"] = "Nenhum / Na Empresa"
+            df_veiculos_completo["status_checklist"] = "Sem Registo"
+            df_veiculos_completo["motorista_responsavel"] = "Nenhum"
 
             for idx, row in df_veiculos_completo.iterrows():
                 v_id = row.get("id")
@@ -81,25 +81,41 @@ def carregar_dados_dashboard():
                     df_c = pd.read_sql_query(q_single, conn)
                     if not df_c.empty:
                         c_row = df_c.iloc[0]
-                        for col_s in ["status", "status_veiculo", "condicao", "situacao"]:
-                            if col_s in df_c.columns and pd.notna(c_row[col_s]):
-                                df_veiculos_completo.loc[idx, "status_checklist"] = str(c_row[col_s])
-                                break
                         
+                        # Captura o status real do checklist se existir alguma coluna de estado/status
+                        status_encontrado = None
+                        for col_s in ["status", "status_veiculo", "condicao", "situacao", "estado"]:
+                            if col_s in df_c.columns and pd.notna(c_row[col_s]):
+                                val_s = str(c_row[col_s]).strip()
+                                if val_s and val_s.lower() != 'nan':
+                                    status_encontrado = val_s
+                                    break
+                        
+                        if status_encontrado:
+                            df_veiculos_completo.loc[idx, "status_checklist"] = status_encontrado
+                        else:
+                            df_veiculos_completo.loc[idx, "status_checklist"] = "Verificado (Checklist Realizado)"
+                        
+                        # Captura o nome real do motorista
                         mot_nome = None
                         for col_m in ["motorista", "nome_motorista", "condutor", "usuario", "responsavel"]:
                             if col_m in df_c.columns and pd.notna(c_row[col_m]):
-                                mot_nome = str(c_row[col_m])
-                                break
+                                val = str(c_row[col_m]).strip()
+                                if val and val.lower() != 'nan' and val != 'None':
+                                    mot_nome = val
+                                    break
                         
                         if not mot_nome:
                             for col_m_id in ["motorista_id", "id_motorista"]:
                                 if col_m_id in df_c.columns and pd.notna(c_row[col_m_id]):
-                                    m_id = c_row[col_m_id]
-                                    cursor.execute(f"SELECT nome FROM motoristas WHERE id = {m_id}")
-                                    res_m = cursor.fetchone()
-                                    if res_m:
-                                        mot_nome = res_m[0]
+                                    try:
+                                        m_id = int(c_row[col_m_id])
+                                        cursor.execute(f"SELECT nome FROM motoristas WHERE id = {m_id}")
+                                        res_m = cursor.fetchone()
+                                        if res_m and res_m[0]:
+                                            mot_nome = str(res_m[0])
+                                    except Exception:
+                                        pass
                                     break
 
                         if mot_nome:
@@ -107,30 +123,35 @@ def carregar_dados_dashboard():
                 except Exception:
                     pass
 
-        # Calcular contadores de alugados e próprios de forma flexível
+        # 3. Contadores de alugados e próprios baseados estritamente na coluna de tipo/categoria
         if not df_veiculos_completo.empty:
-            colunas_str = " ".join(df_veiculos_completo.columns.astype(str)).lower()
-            col_tipo_candidata = None
-            for c in df_veiculos_completo.columns:
-                if any(termo in c.lower() for termo in ['tipo', 'categoria', 'posse', 'class']):
-                    col_tipo_candidata = c
-                    break
-
-            if col_tipo_candidata:
-                mask_alug = df_veiculos_completo[col_tipo_candidata].astype(str).str.lower().str.contains("alugado|terceirizado|locado|terceiro", na=False)
+            col_tipo = next((c for c in df_veiculos_completo.columns if c.lower() in ['tipo', 'categoria', 'posse', 'classificacao']), None)
+            if col_tipo:
+                mask_alug = df_veiculos_completo[col_tipo].astype(str).str.lower().str.contains("alugado|terceirizado|locado|terceiro", na=False)
                 qtd_alugados = int(mask_alug.sum())
                 qtd_proprios = len(df_veiculos_completo) - qtd_alugados
             else:
                 qtd_proprios = len(df_veiculos_completo)
                 qtd_alugados = 0
 
-        # 3. Capturar checklists para debug
+            # 4. Calcular contratos a vencer (próximos 30 dias)
+            col_fim = next((c for c in df_veiculos_completo.columns if any(termo in c.lower() for termo in ['venc', 'fim', 'validade', 'termino', 'contrato'])), None)
+            if col_fim:
+                try:
+                    hoje = datetime.date.today()
+                    limite = hoje + datetime.timedelta(days=30)
+                    datas_convertidas = pd.to_datetime(df_veiculos_completo[col_fim], errors="coerce").dt.date
+                    validas = datas_convertidas.notna()
+                    qtd_contratos_atencao = int(((datas_convertidas >= hoje) & (datas_convertidas <= limite) & validas).sum())
+                except Exception:
+                    pass
+
+        # 5. Debug e Manutenções
         try:
             df_debug_checklists = pd.read_sql_query("SELECT * FROM checklists ORDER BY id DESC LIMIT 5", conn)
         except Exception:
             pass
 
-        # 4. Manutenções recentes
         try:
             df_manutencoes = pd.read_sql_query(
                 """
@@ -204,7 +225,6 @@ def render_cards_veiculos(df_veiculos):
     """, unsafe_allow_html=True)
 
     for index, row in df_veiculos.iterrows():
-        # Tenta extrair placa, marca e modelo de forma flexível independentemente das maiúsculas/minúsculas
         placa = 'N/A'
         for col in row.index:
             if 'placa' in col.lower():
@@ -235,8 +255,8 @@ def render_cards_veiculos(df_veiculos):
                 locadora = str(row[col])
                 break
         
-        texto_status = str(row.get('status_checklist', 'Disponível'))
-        motorista_txt = str(row.get('motorista_responsavel', 'Nenhum / Na Empresa'))
+        texto_status = str(row.get('status_checklist', 'Sem Registo'))
+        motorista_txt = str(row.get('motorista_responsavel', 'Nenhum'))
         locadora_txt = locadora if locadora and locadora != 'nan' and locadora != 'None' else 'N/A'
 
         st.markdown(f"""
@@ -248,7 +268,7 @@ def render_cards_veiculos(df_veiculos):
                 <div class="veiculo-info">Modelo: <span>{marca} {modelo}</span></div>
                 <div class="veiculo-info">Tipo: <span>{tipo}</span></div>
                 <div class="veiculo-info">Locadora: <span>{locadora_txt}</span></div>
-                <div class="veiculo-info">Responsável / Último Checklist: <span style="color: #60a5fa;">{motorista_txt}</span></div>
+                <div class="veiculo-info">Último Checklist por: <span style="color: #60a5fa; font-weight: bold;">{motorista_txt}</span></div>
             </div>
         """, unsafe_allow_html=True)
 
@@ -291,29 +311,21 @@ def render_dashboard(contar_registros_fn=None):
             df_proprios = pd.DataFrame()
             
             try:
-                col_tipo = next((c for c in df_v.columns if 'tipo' in c.lower() or 'categoria' in c.lower()), None)
+                col_tipo = next((c for c in df_v.columns if c.lower() in ['tipo', 'categoria', 'posse', 'classificacao']), None)
                 if col_tipo:
-                    df_alugados = df_v[df_v[col_tipo].astype(str).str.lower().str.contains("alugado|terceirizado|locado|terceiro", na=False)]
-                    df_proprios = df_v[~df_v.index.isin(df_alugados.index)]
+                    mask_alug = df_v[col_tipo].astype(str).str.lower().str.contains("alugado|terceirizado|locado|terceiro", na=False)
+                    df_alugados = df_v[mask_alug].copy()
+                    df_proprios = df_v[~mask_alug].copy()
                 else:
-                    # Se não existir coluna de tipo, colocamos todos em Próprios para aparecerem
-                    df_proprios = df_v
+                    df_proprios = df_v.copy()
             except Exception:
-                df_proprios = df_v
+                df_proprios = df_v.copy()
 
             sub1, sub2 = st.tabs(["📋 Alugados / Terceirizados", "🏢 Próprios"])
             with sub1:
-                if not df_alugados.empty:
-                    render_cards_veiculos(df_alugados)
-                else:
-                    # Garantia total: se estiver vazio, mostra todos os veículos para não sumir com os cartões
-                    st.info("A exibir todos os veículos disponíveis (nenhum marcador de alugado restrito encontrado):")
-                    render_cards_veiculos(df_v)
+                render_cards_veiculos(df_alugados)
             with sub2:
-                if not df_proprios.empty:
-                    render_cards_veiculos(df_proprios)
-                else:
-                    render_cards_veiculos(df_v)
+                render_cards_veiculos(df_proprios)
         else:
             st.info("Nenhum veículo registado na base de dados.")
 
