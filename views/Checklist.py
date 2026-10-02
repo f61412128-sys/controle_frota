@@ -1,10 +1,9 @@
 import json
-import sqlite3
 import time
 import urllib.request
 import pandas as pd
 import streamlit as st
-from config import DB_PATH
+from database.connection import get_connection
 from views.services.cadastros_service import listar_motoristas, listar_veiculos
 
 
@@ -53,38 +52,40 @@ def salvar_checklist(
     # Converte as coordenadas em endereço legível
     localizacao_amigavel = obter_endereco_reverso(localizacao)
 
-    with sqlite3.connect(DB_PATH) as conn:
-        cursor = conn.cursor()
+    conn = get_connection()
+    cursor = conn.cursor()
 
-        # Garante compatibilidade caso a coluna localizacao ainda não exista
-        cursor.execute("PRAGMA table_info(checklists)")
-        colunas_chk = [col[1] for col in cursor.fetchall()]
+    try:
+        # Garante compatibilidade e criação de colunas caso ainda não existam no PostgreSQL
+        cursor.execute(
+            "SELECT column_name FROM information_schema.columns WHERE table_name = 'checklists'"
+        )
+        colunas_chk = [col[0] for col in cursor.fetchall()]
+        
         if "localizacao" not in colunas_chk:
             try:
-                cursor.execute(
-                    "ALTER TABLE checklists ADD COLUMN localizacao TEXT"
-                )
+                cursor.execute("ALTER TABLE checklists ADD COLUMN localizacao TEXT")
+                conn.commit()
             except Exception:
-                pass
+                conn.rollback()
 
-        # Valida se existe coluna de foto na tabela checklists
         if "foto" not in colunas_chk:
             try:
-                cursor.execute(
-                    "ALTER TABLE checklists ADD COLUMN foto BLOB"
-                )
+                cursor.execute("ALTER TABLE checklists ADD COLUMN foto BYTEA")
+                conn.commit()
             except Exception:
-                pass
+                conn.rollback()
 
         # 1. Determina resultado geral
         tem_pendencia = any(res == "NÃO OK" for res in itens_respostas.values())
         resultado_geral = "Com pendências" if tem_pendencia else "Aprovado"
 
-        # 2. Salva o Checklist com o endereço amigável e a foto (se houver)
+        # 2. Salva o Checklist e obtém o ID gerado (PostgreSQL utiliza RETURNING id)
         cursor.execute(
             """
             INSERT INTO checklists (veiculo_id, motorista_id, km, resultado, observacoes, localizacao, foto)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            RETURNING id
             """,
             (
                 veiculo_id,
@@ -96,21 +97,23 @@ def salvar_checklist(
                 foto_bytes,
             ),
         )
-        checklist_id = cursor.lastrowid
+        checklist_id = cursor.fetchone()[0]
 
         # 3. Salva os Itens e abre Ocorrências automáticas se houver falha
         for (categoria, item), resp in itens_respostas.items():
             cursor.execute(
                 """
                 INSERT INTO itens_checklist (checklist_id, categoria, item, resultado)
-                VALUES (?, ?, ?, ?)
+                VALUES (%s, %s, %s, %s)
                 """,
                 (checklist_id, categoria, item, resp),
             )
 
             if resp == "NÃO OK":
-                cursor.execute("PRAGMA table_info(ocorrencias)")
-                colunas_oco = [col[1] for col in cursor.fetchall()]
+                cursor.execute(
+                    "SELECT column_name FROM information_schema.columns WHERE table_name = 'ocorrencias'"
+                )
+                colunas_oco = [col[0] for col in cursor.fetchall()]
 
                 val_oco = {
                     "veiculo_id": veiculo_id,
@@ -127,7 +130,7 @@ def salvar_checklist(
                     val_oco["gravidade"] = "Média"
 
                 cols = ", ".join(val_oco.keys())
-                placeholders = ", ".join(["?"] * len(val_oco))
+                placeholders = ", ".join(["%s"] * len(val_oco))
                 cursor.execute(
                     f"INSERT INTO ocorrencias ({cols}) VALUES ({placeholders})",
                     list(val_oco.values()),
@@ -135,19 +138,27 @@ def salvar_checklist(
 
         # 4. Atualiza o KM do veículo
         cursor.execute(
-            "UPDATE veiculos SET km_atual = ? WHERE id = ?", (km, veiculo_id)
+            "UPDATE veiculos SET km_atual = %s WHERE id = %s", (km, veiculo_id)
         )
         conn.commit()
+    except Exception as e:
+        conn.rollback()
+        raise e
+    finally:
+        cursor.close()
+        conn.close()
 
 
 def buscar_historico_checklists():
-    """Consulta o histórico de checklists de forma segura, adaptando-se às colunas reais da BD."""
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
+    """Consulta o histórico de checklists de forma segura na base de dados PostgreSQL."""
+    conn = get_connection()
+    cursor = conn.cursor()
 
-        cursor.execute("PRAGMA table_info(checklists)")
-        colunas_chk = [col[1] for col in cursor.fetchall()]
+    try:
+        cursor.execute(
+            "SELECT column_name FROM information_schema.columns WHERE table_name = 'checklists'"
+        )
+        colunas_chk = [col[0] for col in cursor.fetchall()]
 
         col_data_sql = "''"
         if "created_at" in colunas_chk:
@@ -180,20 +191,28 @@ def buscar_historico_checklists():
         """
         cursor.execute(query)
         rows = cursor.fetchall()
-        return [dict(r) for r in rows]
+        col_names = [desc[0] for desc in cursor.description]
+        return [dict(zip(col_names, r)) for r in rows]
+    finally:
+        cursor.close()
+        conn.close()
 
 
 def buscar_itens_checklist(checklist_id):
     """Consulta os itens inspecionados de um determinado checklist."""
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
         cursor.execute(
-            "SELECT categoria, item, resultado FROM itens_checklist WHERE"
-            " checklist_id = ?",
+            "SELECT categoria, item, resultado FROM itens_checklist WHERE checklist_id = %s",
             (checklist_id,),
         )
-        return [dict(r) for r in cursor.fetchall()]
+        rows = cursor.fetchall()
+        col_names = [desc[0] for desc in cursor.description]
+        return [dict(zip(col_names, r)) for r in rows]
+    finally:
+        cursor.close()
+        conn.close()
 
 
 def render():
