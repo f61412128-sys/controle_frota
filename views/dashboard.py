@@ -21,7 +21,7 @@ def carregar_dados_dashboard():
     df_debug_checklists = pd.DataFrame()
 
     try:
-        # 1. Contadores gerais de forma segura
+        # 1. Contadores gerais
         try:
             cursor.execute("SELECT COUNT(*) FROM veiculos")
             res = cursor.fetchone()
@@ -68,23 +68,6 @@ def carregar_dados_dashboard():
         except Exception:
             df_veiculos_completo = pd.DataFrame()
 
-        # Separar contadores de próprios e alugados com base no DataFrame carregado (mais seguro)
-        if not df_veiculos_completo.empty:
-            col_tipo = next((c for c in df_veiculos_completo.columns if 'tipo' in c.lower()), None)
-            if col_tipo:
-                df_temp_alug = df_veiculos_completo[df_veiculos_completo[col_tipo].astype(str).str.lower().str.contains("alugado|terceirizado|locado", na=False)]
-                df_temp_prop = df_veiculos_completo[df_veiculos_completo[col_tipo].astype(str).str.lower().str.contains("próprio|proprio", na=False)]
-                qtd_alugados = len(df_temp_alug)
-                qtd_proprios = len(df_temp_prop)
-            else:
-                qtd_proprios = len(df_veiculos_completo)
-
-        # 3. Capturar checklists para debug
-        try:
-            df_debug_checklists = pd.read_sql_query("SELECT * FROM checklists ORDER BY id DESC LIMIT 5", conn)
-        except Exception:
-            pass
-
         # Enriquecer cada veículo com status de checklist e motorista responsável
         if not df_veiculos_completo.empty:
             df_veiculos_completo["status_checklist"] = "Disponível"
@@ -124,6 +107,29 @@ def carregar_dados_dashboard():
                 except Exception:
                     pass
 
+        # Calcular contadores de alugados e próprios de forma flexível
+        if not df_veiculos_completo.empty:
+            colunas_str = " ".join(df_veiculos_completo.columns.astype(str)).lower()
+            col_tipo_candidata = None
+            for c in df_veiculos_completo.columns:
+                if any(termo in c.lower() for termo in ['tipo', 'categoria', 'posse', 'class']):
+                    col_tipo_candidata = c
+                    break
+
+            if col_tipo_candidata:
+                mask_alug = df_veiculos_completo[col_tipo_candidata].astype(str).str.lower().str.contains("alugado|terceirizado|locado|terceiro", na=False)
+                qtd_alugados = int(mask_alug.sum())
+                qtd_proprios = len(df_veiculos_completo) - qtd_alugados
+            else:
+                qtd_proprios = len(df_veiculos_completo)
+                qtd_alugados = 0
+
+        # 3. Capturar checklists para debug
+        try:
+            df_debug_checklists = pd.read_sql_query("SELECT * FROM checklists ORDER BY id DESC LIMIT 5", conn)
+        except Exception:
+            pass
+
         # 4. Manutenções recentes
         try:
             df_manutencoes = pd.read_sql_query(
@@ -143,24 +149,6 @@ def carregar_dados_dashboard():
     finally:
         cursor.close()
         conn.close()
-
-    # Contratos a vencer (últimos 30 dias)
-    if not df_veiculos_completo.empty:
-        try:
-            col_fim = next((c for c in df_veiculos_completo.columns if 'fim' in c.lower() or 'vencimento' in c.lower() or 'contrato' in c.lower()), None)
-            col_tipo = next((c for c in df_veiculos_completo.columns if 'tipo' in c.lower()), None)
-            
-            if col_tipo and col_fim:
-                df_alug = df_veiculos_completo[
-                    df_veiculos_completo[col_tipo].astype(str).str.lower().str.contains("alugado|terceirizado|locado", na=False)
-                ]
-                if not df_alug.empty:
-                    hoje = datetime.date.today()
-                    limite = hoje + datetime.timedelta(days=30)
-                    df_alug["fim_dt"] = pd.to_datetime(df_alug[col_fim], errors="coerce").dt.date
-                    qtd_contratos_atencao = len(df_alug[(df_alug["fim_dt"] >= hoje) & (df_alug["fim_dt"] <= limite)])
-        except Exception:
-            pass
 
     return {
         "veiculos": qtd_veiculos,
@@ -216,17 +204,36 @@ def render_cards_veiculos(df_veiculos):
     """, unsafe_allow_html=True)
 
     for index, row in df_veiculos.iterrows():
-        placa = str(row.get('placa') or row.get('Placa') or 'N/A')
-        marca = str(row.get('marca') or row.get('Marca') or '')
-        modelo = str(row.get('modelo') or row.get('Modelo') or '')
-        
+        # Tenta extrair placa, marca e modelo de forma flexível independentemente das maiúsculas/minúsculas
+        placa = 'N/A'
+        for col in row.index:
+            if 'placa' in col.lower():
+                placa = str(row[col])
+                break
+
+        marca = ''
+        for col in row.index:
+            if 'marca' in col.lower():
+                marca = str(row[col])
+                break
+
+        modelo = ''
+        for col in row.index:
+            if 'modelo' in col.lower():
+                modelo = str(row[col])
+                break
+
         tipo = 'N/A'
         for col in row.index:
-            if 'tipo' in col.lower():
+            if 'tipo' in col.lower() or 'categoria' in col.lower():
                 tipo = str(row[col])
                 break
 
-        locadora = str(row.get('locadora') or row.get('Locadora') or '-')
+        locadora = '-'
+        for col in row.index:
+            if 'locadora' in col.lower():
+                locadora = str(row[col])
+                break
         
         texto_status = str(row.get('status_checklist', 'Disponível'))
         motorista_txt = str(row.get('motorista_responsavel', 'Nenhum / Na Empresa'))
@@ -284,11 +291,12 @@ def render_dashboard(contar_registros_fn=None):
             df_proprios = pd.DataFrame()
             
             try:
-                col_tipo = next((c for c in df_v.columns if 'tipo' in c.lower()), None)
+                col_tipo = next((c for c in df_v.columns if 'tipo' in c.lower() or 'categoria' in c.lower()), None)
                 if col_tipo:
-                    df_alugados = df_v[df_v[col_tipo].astype(str).str.lower().str.contains("alugado|terceirizado|locado", na=False)]
-                    df_proprios = df_v[df_v[col_tipo].astype(str).str.lower().str.contains("próprio|proprio", na=False)]
+                    df_alugados = df_v[df_v[col_tipo].astype(str).str.lower().str.contains("alugado|terceirizado|locado|terceiro", na=False)]
+                    df_proprios = df_v[~df_v.index.isin(df_alugados.index)]
                 else:
+                    # Se não existir coluna de tipo, colocamos todos em Próprios para aparecerem
                     df_proprios = df_v
             except Exception:
                 df_proprios = df_v
@@ -298,8 +306,8 @@ def render_dashboard(contar_registros_fn=None):
                 if not df_alugados.empty:
                     render_cards_veiculos(df_alugados)
                 else:
-                    # Se o filtro específico falhar, mostra todos para garantir visualização imediata
-                    st.info("Nenhum veículo com filtro exato de alugado encontrado. A listar todos:")
+                    # Garantia total: se estiver vazio, mostra todos os veículos para não sumir com os cartões
+                    st.info("A exibir todos os veículos disponíveis (nenhum marcador de alugado restrito encontrado):")
                     render_cards_veiculos(df_v)
             with sub2:
                 if not df_proprios.empty:
