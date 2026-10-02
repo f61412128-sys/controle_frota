@@ -21,25 +21,11 @@ def carregar_dados_dashboard():
     df_debug_checklists = pd.DataFrame()
 
     try:
-        # 1. Contadores gerais
+        # 1. Contadores gerais de forma segura
         try:
             cursor.execute("SELECT COUNT(*) FROM veiculos")
             res = cursor.fetchone()
             qtd_veiculos = res[0] if res else 0
-        except Exception:
-            pass
-
-        try:
-            cursor.execute("SELECT COUNT(*) FROM veiculos WHERE LOWER(tipo_propriedade) LIKE '%proprio%' OR LOWER(tipo_propriedade) LIKE '%próprio%' OR LOWER(tipo) LIKE '%proprio%' OR LOWER(tipo) LIKE '%próprio%'")
-            res = cursor.fetchone()
-            qtd_proprios = res[0] if res else 0
-        except Exception:
-            pass
-
-        try:
-            cursor.execute("SELECT COUNT(*) FROM veiculos WHERE LOWER(tipo_propriedade) LIKE '%alugado%' OR LOWER(tipo_propriedade) LIKE '%terceirizado%' OR LOWER(tipo_propriedade) LIKE '%locado%' OR LOWER(tipo) LIKE '%alugado%' OR LOWER(tipo) LIKE '%terceirizado%' OR LOWER(tipo) LIKE '%locado%'")
-            res = cursor.fetchone()
-            qtd_alugados = res[0] if res else 0
         except Exception:
             pass
 
@@ -81,6 +67,17 @@ def carregar_dados_dashboard():
             df_veiculos_completo = pd.read_sql_query("SELECT * FROM veiculos", conn)
         except Exception:
             df_veiculos_completo = pd.DataFrame()
+
+        # Separar contadores de próprios e alugados com base no DataFrame carregado (mais seguro)
+        if not df_veiculos_completo.empty:
+            col_tipo = next((c for c in df_veiculos_completo.columns if 'tipo' in c.lower()), None)
+            if col_tipo:
+                df_temp_alug = df_veiculos_completo[df_veiculos_completo[col_tipo].astype(str).str.lower().str.contains("alugado|terceirizado|locado", na=False)]
+                df_temp_prop = df_veiculos_completo[df_veiculos_completo[col_tipo].astype(str).str.lower().str.contains("próprio|proprio", na=False)]
+                qtd_alugados = len(df_temp_alug)
+                qtd_proprios = len(df_temp_prop)
+            else:
+                qtd_proprios = len(df_veiculos_completo)
 
         # 3. Capturar checklists para debug
         try:
@@ -182,7 +179,7 @@ def carregar_dados_dashboard():
 
 def render_cards_veiculos(df_veiculos):
     if df_veiculos.empty:
-        st.info("Nenhum veículo encontrado nesta categoria.")
+        st.info("Nenhum veículo registado nesta secção.")
         return
 
     st.markdown("""
@@ -296,17 +293,21 @@ def render_dashboard(contar_registros_fn=None):
             except Exception:
                 df_proprios = df_v
 
-            # Segurança: se nenhuma aba capturar por filtro, joga tudo em próprios para nunca sumirem os cartões
-            if df_alugados.empty and df_proprios.empty:
-                df_proprios = df_v
-
             sub1, sub2 = st.tabs(["📋 Alugados / Terceirizados", "🏢 Próprios"])
             with sub1:
-                render_cards_veiculos(df_alugados)
+                if not df_alugados.empty:
+                    render_cards_veiculos(df_alugados)
+                else:
+                    # Se o filtro específico falhar, mostra todos para garantir visualização imediata
+                    st.info("Nenhum veículo com filtro exato de alugado encontrado. A listar todos:")
+                    render_cards_veiculos(df_v)
             with sub2:
-                render_cards_veiculos(df_proprios)
+                if not df_proprios.empty:
+                    render_cards_veiculos(df_proprios)
+                else:
+                    render_cards_veiculos(df_v)
         else:
-            st.info("Nenhum veículo registado.")
+            st.info("Nenhum veículo registado na base de dados.")
 
     with tab_rodizio:
         st.markdown("##### Consulta de Rodízio (SP)")
