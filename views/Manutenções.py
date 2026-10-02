@@ -5,11 +5,12 @@ from views.services.cadastros_service import listar_veiculos
 
 
 def garantir_tabela_manutencoes():
-    """Garante que a tabela manutencoes existe no PostgreSQL e possui todas as colunas necessárias."""
+    """Garante que a tabela manutencoes existe no PostgreSQL com todas as colunas necessárias."""
     conn = get_connection()
     try:
         cursor = conn.cursor()
-        # 1. Cria a tabela caso ela não exista (Sintaxe PostgreSQL)
+        
+        # 1. Cria a tabela principal com SERIAL para autoincremento no PostgreSQL
         cursor.execute(
             """
             CREATE TABLE IF NOT EXISTS manutencoes (
@@ -25,10 +26,10 @@ def garantir_tabela_manutencoes():
                 proximo_km REAL,
                 FOREIGN KEY (veiculo_id) REFERENCES veiculos (id)
             )
-        """
+            """
         )
         
-        # 2. Garante que colunas adicionadas recentemente existam no PostgreSQL
+        # 2. Adiciona colunas individualmente se ainda não existirem (Sintaxe segura para Postgres)
         colunas_necessarias = {
             "tipo": "TEXT",
             "status": "TEXT",
@@ -42,9 +43,9 @@ def garantir_tabela_manutencoes():
 
         for coluna, tipo_dado in colunas_necessarias.items():
             cursor.execute(
+                f"""
+                ALTER TABLE manutencoes ADD COLUMN IF NOT EXISTS {coluna} {tipo_dado};
                 """
-                ALTER TABLE manutencoes ADD COLUMN IF NOT EXISTS %s %s
-                """ % (coluna, tipo_dado)
             )
 
         conn.commit()
@@ -126,7 +127,7 @@ def carregar_manutencoes():
 
 
 def render():
-    st.title("🛠️ Controle de Manutenções")
+    st.title("🛠️️ Controle de Manutenções")
 
     tab1, tab2, tab3 = st.tabs([
         "📋 Histórico",
