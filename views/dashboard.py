@@ -84,10 +84,9 @@ def render_cards_veiculos_estilizados(df_veiculos):
         """, unsafe_allow_html=True)
 
 
-def fetch_table_postgres_debug(query, params=None):
-    """Executa a query e mostra o erro exato na tela se houver algum problema."""
-    conn = get_connection()
+def fetch_table_postgres_safe(query, params=None):
     try:
+        conn = get_connection()
         cursor = conn.cursor()
         cursor.execute(query, params or ())
         rows = cursor.fetchall()
@@ -100,54 +99,28 @@ def fetch_table_postgres_debug(query, params=None):
         conn.close()
         return df
     except Exception as e:
-        st.error(f"Erro na query: {query} -> {e}")
-        conn.close()
+        st.error(f"Erro ao executar query ({query}): {e}")
         return pd.DataFrame()
 
 
 def render_dashboard(contar_registros_fn=None):
-    st.title("📊 Painel Geral (Debug de Conexão)")
+    st.title("📊 Painel Geral (Frota)")
 
-    # Obter lista de tabelas no PostgreSQL sem ocultar erros
-    df_tables = fetch_table_postgres_debug(
-        "SELECT table_name FROM information_schema.tables WHERE table_schema='public';"
-    )
-    tabelas_existentes = df_tables['table_name'].tolist() if not df_tables.empty else []
-
-    df_veiculos = fetch_table_postgres_debug("SELECT * FROM veiculos")
-    df_manutencoes = fetch_table_postgres_debug("SELECT * FROM manutencoes")
-    df_motoristas = fetch_table_postgres_debug("SELECT * FROM motoristas")
-
-    # Procurar tabela de checklists no PostgreSQL
-    df_checklists = pd.DataFrame()
-    nome_tabela_chk = "Nenhuma"
+    df_veiculos = fetch_table_postgres_safe("SELECT * FROM veiculos")
+    df_manutencoes = fetch_table_postgres_safe("SELECT * FROM manutencoes")
+    df_motoristas = fetch_table_postgres_safe("SELECT * FROM motoristas")
     
-    for t in ['checklists', 'checklist', 'inspecoes', 'historico_checklist', 'checklist_diario', 'vistoria']:
-        if t in tabelas_existentes:
-            df_temp = fetch_table_postgres_debug(f"SELECT * FROM {t}")
-            if not df_temp.empty:
-                df_checklists = df_temp
-                nome_tabela_chk = t
-                break
-
-    if df_checklists.empty:
-        for t in tabelas_existentes:
-            if any(k in t.lower() for k in ['check', 'vistor', 'inspec']):
-                df_temp = fetch_table_postgres_debug(f"SELECT * FROM {t}")
-                if not df_temp.empty:
-                    df_checklists = df_temp
-                    nome_tabela_chk = t
-                    break
+    # Leitura direta e forçada da tabela checklists detetada
+    df_checklists = fetch_table_postgres_safe("SELECT * FROM checklists")
 
     df_contratos = pd.DataFrame()
     for t in ['contratos', 'vencimento_contratos']:
-        if t in tabelas_existentes:
-            df_temp = fetch_table_postgres_debug(f"SELECT * FROM {t}")
-            if not df_temp.empty:
-                df_contratos = df_temp
-                break
+        df_temp = fetch_table_postgres_safe(f"SELECT * FROM {t}")
+        if not df_temp.empty:
+            df_contratos = df_temp
+            break
 
-    # Cruzamento com os dados da tabela de checklists
+    # Cruzamento inteligente dos checklists com os veículos
     if not df_veiculos.empty:
         status_list = []
         resp_list = []
@@ -325,11 +298,10 @@ def render_dashboard(contar_registros_fn=None):
     with tab_pendencias:
         st.success("Nenhuma ocorrência pendente!")
 
-    # Caixa de Diagnóstico Explicita
-    with st.expander("🛠 Diagnóstico de Erros PostgreSQL", expanded=True):
-        st.write(f"**Tabelas detetadas no PostgreSQL:** {tabelas_existentes}")
-        st.write(f"**Tabela de checklist selecionada:** `{nome_tabela_chk}` (Registos: {len(df_checklists)})")
+    # Diagnóstico final para conferir os dados da tabela checklists
+    with st.expander("🛠 Diagnóstico da Tabela Checklists", expanded=True):
+        st.write(f"**Total de registos carregados na tabela `checklists`:** {len(df_checklists)}")
         if not df_checklists.empty:
             st.dataframe(df_checklists, use_container_width=True)
         else:
-            st.warning("Se aparecer algum erro vermelho acima, esse é o motivo exato pelo qual a tabela não está a carregar.")
+            st.warning("A tabela `checklists` está atualmente sem registos na base de dados.")
