@@ -55,7 +55,7 @@ def carregar_dados_dashboard():
         except Exception:
             qtd_pendencias = 0
 
-        # DataFrames via pandas
+        # DataFrames via pandas - Custo de Manutenções
         try:
             df_m_all = pd.read_sql_query("SELECT * FROM manutencoes", conn)
             if not df_m_all.empty and "valor" in df_m_all.columns:
@@ -69,48 +69,42 @@ def carregar_dados_dashboard():
         except Exception:
             custo_total_manut = 0.0
 
+        # Busca segura dos veículos (nunca falha a exibição principal)
         try:
-            # Query melhorada para buscar o status do checklist mais recente e o motorista responsável
-            query_veiculos = """
-                SELECT 
-                    v.id,
-                    v.placa, 
-                    v.marca, 
-                    v.modelo, 
-                    v.tipo_propriedade, 
-                    v.locadora, 
-                    v.inicio_contrato, 
-                    v.fim_contrato, 
-                    v.valor_mensal, 
-                    v.status,
-                    c.status_veiculo AS status_checklist,
-                    m.nome AS motorista_responsavel
-                FROM veiculos v
-                LEFT JOIN (
-                    SELECT DISTINCT ON (veiculo_id) veiculo_id, status_veiculo
-                    FROM checklists
-                    ORDER BY veiculo_id, id DESC
-                ) c ON v.id = c.veiculo_id
-                LEFT JOIN (
-                    SELECT DISTINCT ON (veiculo_id) veiculo_id, motorista_id
-                    FROM checklists
-                    ORDER BY veiculo_id, id DESC
-                ) ch_mot ON v.id = ch_mot.veiculo_id
-                LEFT JOIN motoristas m ON ch_mot.motorista_id = m.id
-                WHERE v.status != 'Inativo'
-            """
-            df_veiculos_completo = pd.read_sql_query(query_veiculos, conn)
+            df_veiculos_completo = pd.read_sql_query(
+                "SELECT id, placa, marca, modelo, tipo_propriedade, locadora, inicio_contrato, fim_contrato, valor_mensal, status FROM veiculos WHERE status != 'Inativo'",
+                conn,
+            )
         except Exception:
-            # Fallback caso a tabela checklists ainda esteja a ser estruturada
-            try:
-                df_veiculos_completo = pd.read_sql_query(
-                    "SELECT placa, marca, modelo, tipo_propriedade, locadora, inicio_contrato, fim_contrato, valor_mensal, status FROM veiculos WHERE status != 'Inativo'",
-                    conn,
-                )
-                df_veiculos_completo["status_checklist"] = None
-                df_veiculos_completo["motorista_responsavel"] = None
-            except Exception:
-                df_veiculos_completo = pd.DataFrame()
+            df_veiculos_completo = pd.DataFrame()
+
+        # Tenta enriquecer com dados do último checklist e motorista responsável de forma isolada
+        if not df_veiculos_completo.empty:
+            df_veiculos_completo["status_checklist"] = None
+            df_veiculos_completo["motorista_responsavel"] = None
+            
+            for idx, row in df_veiculos_completo.iterrows():
+                v_id = row["id"]
+                try:
+                    # Busca o último checklist do veículo
+                    query_chk = f"""
+                        SELECT c.*, m.nome as nome_motorista 
+                        FROM checklists c
+                        LEFT JOIN motoristas m ON c.motorista_id = m.id
+                        WHERE c.veiculo_id = {v_id}
+                        ORDER BY c.id DESC LIMIT 1
+                    """
+                    df_chk = pd.read_sql_query(query_chk, conn)
+                    if not df_chk.empty:
+                        if "status_veiculo" in df_chk.columns:
+                            df_veiculos_completo.loc[idx, "status_checklist"] = df_chk.iloc[0]["status_veiculo"]
+                        elif "status" in df_chk.columns:
+                            df_veiculos_completo.loc[idx, "status_checklist"] = df_chk.iloc[0]["status"]
+                            
+                        if "nome_motorista" in df_chk.columns and pd.notna(df_chk.iloc[0]["nome_motorista"]):
+                            df_veiculos_completo.loc[idx, "motorista_responsavel"] = df_chk.iloc[0]["nome_motorista"]
+                except Exception:
+                    pass
 
         try:
             df_manutencoes = pd.read_sql_query(
@@ -131,13 +125,13 @@ def carregar_dados_dashboard():
 
     # Contratos a vencer
     qtd_contratos_atencao = 0
-    if not df_veiculos_completo.empty:
+    if not df_veiculos_completo.empty and "tipo_propriedade" in df_veiculos_completo.columns:
         df_alug = df_veiculos_completo[
             df_veiculos_completo["tipo_propriedade"]
             .str.lower()
             .str.contains("alugado|terceirizado|locado", na=False)
         ]
-        if not df_alug.empty:
+        if not df_alug.empty and "fim_contrato" in df_alug.columns:
             hoje = datetime.date.today()
             limite = hoje + datetime.timedelta(days=30)
             df_alug["fim_dt"] = pd.to_datetime(
@@ -205,15 +199,12 @@ def render_cards_veiculos(df_veiculos):
         tipo = row.get('tipo_propriedade', 'N/A')
         locadora = row.get('locadora', '-')
         
-        # Pega o status do último checklist se existir, senão assume o status do veículo ou padrão
         status_chk = row.get('status_checklist')
         if status_chk and str(status_chk) != 'nan':
-            # Exemplo de adaptação: se o checklist indica que está na empresa/disponível
             texto_status = str(status_chk)
         else:
             texto_status = row.get('status', 'Ativo')
 
-        # Nome do motorista responsável atual
         motorista = row.get('motorista_responsavel')
         motorista_txt = motorista if motorista and str(motorista) != 'nan' else 'Nenhum / Na Empresa'
 
