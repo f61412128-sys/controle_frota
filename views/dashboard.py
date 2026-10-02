@@ -9,7 +9,7 @@ def render_cards_veiculos_estilizados(df_veiculos):
         st.info("Nenhum veículo registado nesta secção.")
         return
 
-    # Estilo CSS original com os cards escuros, borda azul e fontes alinhadas
+    # Estilo CSS atualizado com as tags de Disponível / Indisponível e indicador visual
     st.markdown("""
         <style>
         .veiculo-card {
@@ -31,6 +31,22 @@ def render_cards_veiculos_estilizados(df_veiculos):
             font-weight: bold;
             color: #ffffff;
         }
+        .badge-disponivel {
+            background-color: #065f46;
+            color: #34d399;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 600;
+        }
+        .badge-indisponivel {
+            background-color: #7f1d1d;
+            color: #f87171;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 600;
+        }
         .veiculo-info {
             font-size: 13px;
             color: #9ca3af;
@@ -48,13 +64,24 @@ def render_cards_veiculos_estilizados(df_veiculos):
         modelo = str(row.get('modelo', 'N/A'))
         tipo = str(row.get('tipo_propriedade', row.get('tipo', 'N/A')))
         
+        # Dados do último checklist vindos do cruzamento
+        status_disp = row.get('status_disponibilidade', 'Indisponível')
+        ultimo_resp = row.get('ultimo_responsavel', 'Nenhum registo')
+        
+        if status_disp == 'Disponível':
+            badge_html = '<span class="badge-disponivel">🟢 Disponível</span>'
+        else:
+            badge_html = '<span class="badge-indisponivel">🔴 Indisponível</span>'
+
         st.markdown(f"""
             <div class="veiculo-card">
                 <div class="veiculo-header">
                     <span class="veiculo-placa">🚗 {placa}</span>
+                    {badge_html}
                 </div>
                 <div class="veiculo-info">Modelo: <span>{modelo}</span></div>
                 <div class="veiculo-info">Tipo: <span>{tipo}</span></div>
+                <div class="veiculo-info">Último Checklist por: <span>{ultimo_resp}</span></div>
             </div>
         """, unsafe_allow_html=True)
 
@@ -78,7 +105,12 @@ def render_dashboard(contar_registros_fn=None):
     except Exception:
         df_motoristas = pd.DataFrame()
 
-    # Tentar carregar contratos se a tabela existir
+    try:
+        df_checklists = pd.read_sql_query("SELECT * FROM checklists", conn)
+    except Exception:
+        df_checklists = pd.DataFrame()
+
+    # Carregar contratos
     df_contratos = pd.DataFrame()
     try:
         df_contratos = pd.read_sql_query("SELECT * FROM contratos", conn)
@@ -89,6 +121,81 @@ def render_dashboard(contar_registros_fn=None):
             pass
 
     conn.close()
+
+    # Cruzamento inteligente com a tabela de checklists para cada veículo
+    if not df_veiculos.empty:
+        status_list = []
+        resp_list = []
+
+        for _, v_row in df_veiculos.iterrows():
+            # Tentar identificar a placa do veículo em várias colunas possíveis
+            p_val = str(v_row.get('placa', '')).strip()
+            id_val = str(v_row.get('id', ''))
+
+            df_chk_veiculo = pd.DataFrame()
+            if not df_checklists.empty:
+                # Procurar colunas comuns de referência ao veículo no checklist
+                col_chk_veiculo = None
+                for c in ['placa', 'veiculo_placa', 'veiculo_id', 'id_veiculo', 'veiculo']:
+                    if c in df_checklists.columns:
+                        col_chk_veiculo = c
+                        break
+                
+                if col_chk_veiculo:
+                    mask = df_checklists[col_chk_veiculo].astype(str).str.strip().str.upper() == p_val.upper()
+                    df_chk_veiculo = df_checklists[mask]
+
+            if not df_chk_veiculo.empty:
+                # Ordenar por data se existir coluna de data ou ID decrescente para pegar o mais recente
+                col_data = None
+                for c in ['data', 'data_checklist', 'created_at', 'data_hora', 'id']:
+                    if c in df_chk_veiculo.columns:
+                        col_data = c
+                        break
+                
+                if col_data:
+                    try:
+                        df_chk_veiculo = df_chk_veiculo.sort_values(by=col_data, ascending=False)
+                    except Exception:
+                        pass
+
+                ult_chk = df_chk_veiculo.iloc[0]
+
+                # Descobrir quem fez o checklist (procurando colunas de utilizador, responsavel, motorista, admin)
+                resp = "Desconhecido"
+                for c_resp in ['usuario', 'responsavel', 'motorista', 'nome', 'criado_por', 'adm']:
+                    if c_resp in ult_chk and pd.notna(ult_chk[c_resp]):
+                        resp = str(ult_chk[c_resp])
+                        break
+
+                resp_lower = resp.lower()
+                # Regra: Se foi feito pelo adm (ou contem admin/administrador) e sem pendências graves, fica Disponível
+                # Caso contrário (outro utilizador/motorista), fica Indisponível para validação
+                is_adm = "adm" in resp_lower or "administrador" in resp_lower
+                
+                # Verificar se há status explícito de aprovação
+                status_aprovado = True
+                for c_status in ['status', 'aprovado', 'situacao']:
+                    if c_status in ult_chk and pd.notna(ult_chk[c_status]):
+                        val_st = str(ult_chk[c_status]).lower()
+                        if any(neg in val_st for n in ['reprov', 'pend', 'manuten', 'nao', 'false']):
+                            status_aprovado = False
+
+                if is_adm and status_aprovado:
+                    status_list.append("Disponível")
+                else:
+                    status_list.append("Indisponível")
+                
+                resp_list.append(resp)
+            else:
+                status_list.append("Indisponível")
+                resp_list.append("Sem checklist recente")
+
+        df_veiculos['status_disponibilidade'] = status_list
+        df_veiculos['ultimo_responsavel'] = resp_list
+    else:
+        df_veiculos['status_disponibilidade'] = "Indisponível"
+        df_veiculos['ultimo_responsavel'] = "N/A"
 
     # Cálculo do Custo de Manutenções
     custo_total_manut = 0.0
@@ -108,16 +215,14 @@ def render_dashboard(contar_registros_fn=None):
                 except Exception:
                     pass
 
-    # Verificação de contratos vencidos ou a vencer
+    # Verificação de contratos
     total_contratos_venc = len(df_contratos)
     if not df_contratos.empty:
-        # Se houver coluna de data de vencimento, podemos filtrar por exemplo os próximos 30 dias ou vencidos
         for col_dt in ['vencimento', 'data_fim', 'fim_contrato', 'data_vencimento']:
             if col_dt in df_contratos.columns:
                 try:
                     dt_venc = pd.to_datetime(df_contratos[col_dt], errors='coerce')
                     hoje = pd.Timestamp.today()
-                    # Contratos vencidos ou a vencer em 30 dias
                     proximos = df_contratos[(dt_venc >= hoje) & (dt_venc <= hoje + pd.Timedelta(days=30))]
                     total_contratos_venc = len(proximos)
                     break
@@ -165,7 +270,6 @@ def render_dashboard(contar_registros_fn=None):
     c6.metric("👨‍✈️ Motoristas", total_motoristas)
     c7.metric("⚠ Ocorrências", 0)
     
-    # Métrica de contratos dinâmica baseada nos dados reais
     delta_contrato = "Atenção" if total_contratos_venc > 0 else "OK"
     c8.metric("📄 Venc. Contratos", total_contratos_venc, delta=delta_contrato, delta_color="inverse" if total_contratos_venc > 0 else "normal")
 
