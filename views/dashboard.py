@@ -85,9 +85,18 @@ def render_cards_veiculos_estilizados(df_veiculos):
 
 
 def render_dashboard(contar_registros_fn=None):
-    st.title("📊 Painel Geral (v3.2 - Diagnóstico)")
+    st.title("📊 Painel Geral (v3.3 - Auto-Detecção)")
 
     conn = get_connection()
+    
+    # Descobrir quais tabelas existem na base de dados
+    tabelas_existentes = []
+    try:
+        df_tables = pd.read_sql_query("SELECT name FROM sqlite_master WHERE type='table';", conn)
+        tabelas_existentes = df_tables['name'].tolist()
+    except Exception:
+        pass
+
     try:
         df_veiculos = pd.read_sql_query("SELECT * FROM veiculos", conn)
     except Exception:
@@ -103,10 +112,32 @@ def render_dashboard(contar_registros_fn=None):
     except Exception:
         df_motoristas = pd.DataFrame()
 
-    try:
-        df_checklists = pd.read_sql_query("SELECT * FROM checklists", conn)
-    except Exception:
-        df_checklists = pd.DataFrame()
+    # Procurar dinamicamente por qualquer tabela relacionada com checklists
+    df_checklists = pd.DataFrame()
+    nome_tabela_chk_encontrada = "Nenhuma"
+    
+    possiveis_nomes_checklist = ['checklists', 'checklist', 'inspecoes', 'historico_checklist', 'checklist_diario', 'vistoria']
+    for t_nome in possiveis_nomes_checklist:
+        if t_nome in tabelas_existentes:
+            try:
+                df_checklists = pd.read_sql_query(f"SELECT * FROM {t_nome}", conn)
+                if not df_checklists.empty:
+                    nome_tabela_chk_encontrada = t_nome
+                    break
+            except Exception:
+                pass
+    
+    # Se ainda estiver vazio mas houver alguma tabela com 'check' ou 'vistor' no nome
+    if df_checklists.empty:
+        for t_nome in tabelas_existentes:
+            if 'check' in t_nome.lower() or 'vistor' in t_nome.lower() or 'inspec' in t_nome.lower():
+                try:
+                    df_checklists = pd.read_sql_query(f"SELECT * FROM {t_nome}", conn)
+                    nome_tabela_chk_encontrada = t_nome
+                    if not df_checklists.empty:
+                        break
+                except Exception:
+                    pass
 
     df_contratos = pd.DataFrame()
     try:
@@ -119,7 +150,7 @@ def render_dashboard(contar_registros_fn=None):
 
     conn.close()
 
-    # Cruzamento super flexível com a tabela de checklists
+    # Cruzamento com os dados da tabela de checklists encontrada
     if not df_veiculos.empty:
         status_list = []
         resp_list = []
@@ -130,8 +161,7 @@ def render_dashboard(contar_registros_fn=None):
 
             df_chk_veiculo = pd.DataFrame()
             if not df_checklists.empty:
-                # Vamos testar todas as colunas possíveis na tabela checklists
-                colunas_possiveis = ['placa', 'veiculo_placa', 'veiculo_id', 'id_veiculo', 'veiculo', 'id_veiculo']
+                colunas_possiveis = ['placa', 'veiculo_placa', 'veiculo_id', 'id_veiculo', 'veiculo', 'veiculo_placa']
                 col_encontrada = None
                 for c in colunas_possiveis:
                     if c in df_checklists.columns:
@@ -139,20 +169,17 @@ def render_dashboard(contar_registros_fn=None):
                         break
                 
                 if col_encontrada:
-                    # Tentar filtrar por placa ou ID
                     mask = (
                         (df_checklists[col_encontrada].astype(str).str.strip().str.upper() == p_val) | 
                         (df_checklists[col_encontrada].astype(str).str.strip() == v_id)
                     )
                     df_chk_veiculo = df_checklists[mask]
                 else:
-                    # Se nenhuma coluna óbvia existir, usar o dataframe inteiro para inspeção
                     df_chk_veiculo = df_checklists
 
             if not df_chk_veiculo.empty:
-                # Ordenar pelo mais recente se houver coluna de data/id
                 col_data = None
-                for c in ['data', 'data_checklist', 'created_at', 'data_hora', 'id']:
+                for c in ['data', 'data_checklist', 'created_at', 'data_hora', 'id', 'timestamp']:
                     if c in df_chk_veiculo.columns:
                         col_data = c
                         break
@@ -165,7 +192,6 @@ def render_dashboard(contar_registros_fn=None):
 
                 ult_chk = df_chk_veiculo.iloc[0]
 
-                # Procurar o responsável em qualquer coluna textual relevante
                 resp = "Desconhecido"
                 for c_resp in ['usuario', 'responsavel', 'motorista', 'nome', 'criado_por', 'adm', 'user', 'operador']:
                     if c_resp in ult_chk and pd.notna(ult_chk[c_resp]):
@@ -173,13 +199,11 @@ def render_dashboard(contar_registros_fn=None):
                         break
 
                 resp_lower = resp.lower()
-                # Se contiver admin, adm, ou o nome do administrador, fica Disponível
                 is_adm = any(termo in resp_lower for termo in ['adm', 'administrador', 'admin', 'gestor'])
 
                 if is_adm:
                     status_list.append("Disponível")
                 else:
-                    # Se foi feito por outro utilizador, fica indisponível para conferência
                     status_list.append("Indisponível")
                 
                 resp_list.append(resp)
@@ -306,10 +330,11 @@ def render_dashboard(contar_registros_fn=None):
     with tab_pendencias:
         st.success("Nenhuma ocorrência pendente!")
 
-    # 🔍 Caixa de Diagnóstico Temporária para ver os dados reais da tabela checklists
-    with st.expander("🛠 Ver Dados Reais da Tabela Checklists (Debug)", expanded=True):
-        st.write(f"Total de registos na tabela `checklists`: {len(df_checklists)}")
+    # 🔍 Caixa de Diagnóstico atualizada
+    with st.expander("🛠 Diagnóstico da Base de Dados", expanded=True):
+        st.write(f"**Tabelas detetadas na BD:** {tabelas_existentes}")
+        st.write(f"**Tabela de checklist selecionada:** `{nome_tabela_chk_encontrada}` (Registos: {len(df_checklists)})")
         if not df_checklists.empty:
             st.dataframe(df_checklists, use_container_width=True)
         else:
-            st.warning("A tabela `checklists` está vazia na base de dados SQLite.")
+            st.warning("Nenhum registo encontrado nas tabelas de checklist analisadas.")
