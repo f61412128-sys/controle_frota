@@ -1,5 +1,3 @@
-import sqlite3
-from config import DB_PATH
 from database.connection import get_connection
 
 # =========================================================================
@@ -9,11 +7,10 @@ from database.connection import get_connection
 
 def autenticar_usuario(login_input, senha_input):
     conn = get_connection()
-    conn.row_factory = sqlite3.Row
     try:
         cursor = conn.cursor()
         cursor.execute(
-            "SELECT * FROM usuarios WHERE login = ?", (login_input,)
+            "SELECT * FROM usuarios WHERE login = %s", (login_input,)
         )
         user = cursor.fetchone()
     finally:
@@ -22,6 +19,7 @@ def autenticar_usuario(login_input, senha_input):
     if not user:
         return None
 
+    # Como usamos DictCursor, podemos aceder como dicionário
     user_dict = dict(user)
     campo_senha = "senha" if "senha" in user_dict else "senha_hash"
 
@@ -42,7 +40,7 @@ def salvar_usuario(nome, login, senha, perfil="motorista"):
         cursor.execute(
             """
             INSERT INTO usuarios (nome, login, senha_hash, perfil)
-            VALUES (?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s)
         """,
             (nome, login, senha, perfil),
         )
@@ -56,7 +54,6 @@ def salvar_usuario(nome, login, senha, perfil="motorista"):
 
 def listar_usuarios():
     conn = get_connection()
-    conn.row_factory = sqlite3.Row
     try:
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM usuarios")
@@ -73,7 +70,6 @@ def listar_usuarios():
 
 def listar_motoristas():
     conn = get_connection()
-    conn.row_factory = sqlite3.Row
     try:
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM motoristas")
@@ -92,7 +88,7 @@ def salvar_motorista(
         cursor.execute(
             """
             INSERT INTO motoristas (nome, cpf_matricula, telefone, cnh, categoria_cnh, validade_cnh, status)
-            VALUES (?, ?, ?, ?, ?, ?, 'Ativo')
+            VALUES (%s, %s, %s, %s, %s, %s, 'Ativo')
         """,
             (nome, cpf_matricula, telefone, cnh, categoria_cnh, validade_cnh),
         )
@@ -120,8 +116,8 @@ def atualizar_motorista(
         cursor.execute(
             """
             UPDATE motoristas
-            SET nome = ?, cpf_matricula = ?, telefone = ?, cnh = ?, categoria_cnh = ?, validade_cnh = ?, status = ?
-            WHERE id = ?
+            SET nome = %s, cpf_matricula = %s, telefone = %s, cnh = %s, categoria_cnh = %s, validade_cnh = %s, status = %s
+            WHERE id = %s
         """,
             (
                 nome,
@@ -143,7 +139,7 @@ def atualizar_motorista(
 
 
 # =========================================================================
-# VEÍCULOS (ATUALIZADO COM GARANTIA DE COLUNAS)
+# VEÍCULOS (ADAPTADO PARA POSTGRESQL)
 # =========================================================================
 
 
@@ -155,7 +151,7 @@ def garantir_tabela_veiculos():
         cursor.execute(
             """
             CREATE TABLE IF NOT EXISTS veiculos (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id SERIAL PRIMARY KEY,
                 placa TEXT,
                 marca TEXT,
                 modelo TEXT,
@@ -176,9 +172,11 @@ def garantir_tabela_veiculos():
         """
         )
 
-        # Verifica se as colunas novas existem em bases antigas e adiciona se faltarem
-        cursor.execute("PRAGMA table_info(veiculos)")
-        colunas_existentes = [col[1] for col in cursor.fetchall()]
+        # Equivalente ao PRAGMA do SQLite para PostgreSQL usando information_schema
+        cursor.execute(
+            "SELECT column_name FROM information_schema.columns WHERE table_name = 'veiculos'"
+        )
+        colunas_existentes = [col[0] for col in cursor.fetchall()]
 
         colunas_necessarias = {
             "tipo_propriedade": "TEXT",
@@ -204,7 +202,6 @@ def garantir_tabela_veiculos():
 def listar_veiculos():
     garantir_tabela_veiculos()
     conn = get_connection()
-    conn.row_factory = sqlite3.Row
     try:
         cursor = conn.cursor()
         cursor.execute(
@@ -247,7 +244,7 @@ def salvar_veiculo(
                 placa, marca, modelo, ano, tipo, cor, chassi, km_atual, motorista_id, status,
                 tipo_propriedade, locadora, inicio_contrato, fim_contrato, valor_mensal
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """,
             (
                 placa,
@@ -300,10 +297,10 @@ def atualizar_veiculo(
         cursor.execute(
             """
             UPDATE veiculos
-            SET placa = ?, marca = ?, modelo = ?, ano = ?, tipo = ?, cor = ?, chassi = ?, 
-                km_atual = ?, motorista_id = ?, status = ?, tipo_propriedade = ?, 
-                locadora = ?, inicio_contrato = ?, fim_contrato = ?, valor_mensal = ?
-            WHERE id = ?
+            SET placa = %s, marca = %s, modelo = %s, ano = %s, tipo = %s, cor = %s, chassi = %s, 
+                km_atual = %s, motorista_id = %s, status = %s, tipo_propriedade = %s, 
+                locadora = %s, inicio_contrato = %s, fim_contrato = %s, valor_mensal = %s
+            WHERE id = %s
         """,
             (
                 placa,
