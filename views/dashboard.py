@@ -30,14 +30,14 @@ def carregar_dados_dashboard():
             pass
 
         try:
-            cursor.execute("SELECT COUNT(*) FROM veiculos WHERE LOWER(tipo_propriedade) LIKE '%proprio%' OR LOWER(tipo_propriedade) LIKE '%próprio%'")
+            cursor.execute("SELECT COUNT(*) FROM veiculos WHERE LOWER(tipo_propriedade) LIKE '%proprio%' OR LOWER(tipo_propriedade) LIKE '%próprio%' OR LOWER(tipo) LIKE '%proprio%' OR LOWER(tipo) LIKE '%próprio%'")
             res = cursor.fetchone()
             qtd_proprios = res[0] if res else 0
         except Exception:
             pass
 
         try:
-            cursor.execute("SELECT COUNT(*) FROM veiculos WHERE LOWER(tipo_propriedade) LIKE '%alugado%' OR LOWER(tipo_propriedade) LIKE '%terceirizado%' OR LOWER(tipo_propriedade) LIKE '%locado%'")
+            cursor.execute("SELECT COUNT(*) FROM veiculos WHERE LOWER(tipo_propriedade) LIKE '%alugado%' OR LOWER(tipo_propriedade) LIKE '%terceirizado%' OR LOWER(tipo_propriedade) LIKE '%locado%' OR LOWER(tipo) LIKE '%alugado%' OR LOWER(tipo) LIKE '%terceirizado%' OR LOWER(tipo) LIKE '%locado%'")
             res = cursor.fetchone()
             qtd_alugados = res[0] if res else 0
         except Exception:
@@ -82,76 +82,50 @@ def carregar_dados_dashboard():
         except Exception:
             df_veiculos_completo = pd.DataFrame()
 
-        # 3. Capturar checklists para debug e associação
+        # 3. Capturar checklists para debug
         try:
             df_debug_checklists = pd.read_sql_query("SELECT * FROM checklists ORDER BY id DESC LIMIT 5", conn)
         except Exception:
             pass
 
-        # Tentar fazer o cruzamento direto via SQL para garantir alta performance e precisão
+        # Enriquecer cada veículo com status de checklist e motorista responsável
         if not df_veiculos_completo.empty:
             df_veiculos_completo["status_checklist"] = "Disponível"
             df_veiculos_completo["motorista_responsavel"] = "Nenhum / Na Empresa"
 
-            try:
-                # Consulta SQL unida para buscar o último checklist de cada veículo e o nome do motorista
-                query_unificada = """
-                    SELECT 
-                        v.id as veiculo_id_base,
-                        v.placa as veiculo_placa,
-                        c.status as chk_status,
-                        m.nome as motorista_nome
-                    FROM veiculos v
-                    LEFT JOIN LATERAL (
-                        SELECT * FROM checklists 
-                        WHERE veiculo_id = v.id OR id_veiculo = v.id OR placa = v.placa
-                        ORDER BY id DESC LIMIT 1
-                    ) c ON true
-                    LEFT JOIN motoristas m ON c.motorista_id = m.id OR c.id_motorista = m.id
-                """
-                df_join = pd.read_sql_query(query_unificada, conn)
-                
-                if not df_join.empty:
-                    for _, row_j in df_join.iterrows():
-                        v_id = row_j.get("veiculo_id_base")
-                        status_c = row_j.get("chk_status")
-                        mot_n = row_j.get("motorista_nome")
+            for idx, row in df_veiculos_completo.iterrows():
+                v_id = row.get("id")
+                placa = row.get("placa")
+                try:
+                    q_single = f"SELECT * FROM checklists WHERE veiculo_id = {v_id} OR id_veiculo = {v_id} OR placa = '{placa}' ORDER BY id DESC LIMIT 1"
+                    df_c = pd.read_sql_query(q_single, conn)
+                    if not df_c.empty:
+                        c_row = df_c.iloc[0]
+                        for col_s in ["status", "status_veiculo", "condicao", "situacao"]:
+                            if col_s in df_c.columns and pd.notna(c_row[col_s]):
+                                df_veiculos_completo.loc[idx, "status_checklist"] = str(c_row[col_s])
+                                break
+                        
+                        mot_nome = None
+                        for col_m in ["motorista", "nome_motorista", "condutor", "usuario", "responsavel"]:
+                            if col_m in df_c.columns and pd.notna(c_row[col_m]):
+                                mot_nome = str(c_row[col_m])
+                                break
+                        
+                        if not mot_nome:
+                            for col_m_id in ["motorista_id", "id_motorista"]:
+                                if col_m_id in df_c.columns and pd.notna(c_row[col_m_id]):
+                                    m_id = c_row[col_m_id]
+                                    cursor.execute(f"SELECT nome FROM motoristas WHERE id = {m_id}")
+                                    res_m = cursor.fetchone()
+                                    if res_m:
+                                        mot_nome = res_m[0]
+                                    break
 
-                        idx_match = df_veiculos_completo[df_veiculos_completo["id"] == v_id].index
-                        if not idx_match.empty:
-                            if pd.notna(status_c):
-                                df_veiculos_completo.loc[idx_match, "status_checklist"] = str(status_c)
-                            if pd.notna(mot_n):
-                                df_veiculos_completo.loc[idx_match, "motorista_responsavel"] = str(mot_n)
-            except Exception as e:
-                # Fallback por linha caso o LATERAL join falhe no PostgreSQL específico
-                for idx, row in df_veiculos_completo.iterrows():
-                    v_id = row.get("id")
-                    placa = row.get("placa")
-                    try:
-                        q_single = f"SELECT * FROM checklists WHERE veiculo_id = {v_id} OR placa = '{placa}' ORDER BY id DESC LIMIT 1"
-                        df_c = pd.read_sql_query(q_single, conn)
-                        if not df_c.empty:
-                            c_row = df_c.iloc[0]
-                            for col_s in ["status", "status_veiculo", "condicao"]:
-                                if col_s in df_c.columns and pd.notna(c_row[col_s]):
-                                    df_veiculos_completo.loc[idx, "status_checklist"] = str(c_row[col_s])
-                                    break
-                            
-                            # Tentar achar motorista
-                            mot_id_val = None
-                            for col_m in ["motorista_id", "id_motorista"]:
-                                if col_m in df_c.columns and pd.notna(c_row[col_m]):
-                                    mot_id_val = c_row[col_m]
-                                    break
-                            
-                            if mot_id_val:
-                                cursor.execute(f"SELECT nome FROM motoristas WHERE id = {mot_id_val}")
-                                res_m = cursor.fetchone()
-                                if res_m:
-                                    df_veiculos_completo.loc[idx, "motorista_responsavel"] = res_m[0]
-                    except Exception:
-                        pass
+                        if mot_nome:
+                            df_veiculos_completo.loc[idx, "motorista_responsavel"] = mot_nome
+                except Exception:
+                    pass
 
         # 4. Manutenções recentes
         try:
@@ -173,6 +147,24 @@ def carregar_dados_dashboard():
         cursor.close()
         conn.close()
 
+    # Contratos a vencer (últimos 30 dias)
+    if not df_veiculos_completo.empty:
+        try:
+            col_fim = next((c for c in df_veiculos_completo.columns if 'fim' in c.lower() or 'vencimento' in c.lower() or 'contrato' in c.lower()), None)
+            col_tipo = next((c for c in df_veiculos_completo.columns if 'tipo' in c.lower()), None)
+            
+            if col_tipo and col_fim:
+                df_alug = df_veiculos_completo[
+                    df_veiculos_completo[col_tipo].astype(str).str.lower().str.contains("alugado|terceirizado|locado", na=False)
+                ]
+                if not df_alug.empty:
+                    hoje = datetime.date.today()
+                    limite = hoje + datetime.timedelta(days=30)
+                    df_alug["fim_dt"] = pd.to_datetime(df_alug[col_fim], errors="coerce").dt.date
+                    qtd_contratos_atencao = len(df_alug[(df_alug["fim_dt"] >= hoje) & (df_alug["fim_dt"] <= limite)])
+        except Exception:
+            pass
+
     return {
         "veiculos": qtd_veiculos,
         "proprios": qtd_proprios,
@@ -190,7 +182,7 @@ def carregar_dados_dashboard():
 
 def render_cards_veiculos(df_veiculos):
     if df_veiculos.empty:
-        st.info("Nenhum veículo encontrado.")
+        st.info("Nenhum veículo encontrado nesta categoria.")
         return
 
     st.markdown("""
@@ -227,11 +219,17 @@ def render_cards_veiculos(df_veiculos):
     """, unsafe_allow_html=True)
 
     for index, row in df_veiculos.iterrows():
-        placa = str(row.get('placa') or 'N/A')
-        marca = str(row.get('marca') or '')
-        modelo = str(row.get('modelo') or '')
-        tipo = str(row.get('tipo_propriedade') or 'N/A')
-        locadora = str(row.get('locadora') or '-')
+        placa = str(row.get('placa') or row.get('Placa') or 'N/A')
+        marca = str(row.get('marca') or row.get('Marca') or '')
+        modelo = str(row.get('modelo') or row.get('Modelo') or '')
+        
+        tipo = 'N/A'
+        for col in row.index:
+            if 'tipo' in col.lower():
+                tipo = str(row[col])
+                break
+
+        locadora = str(row.get('locadora') or row.get('Locadora') or '-')
         
         texto_status = str(row.get('status_checklist', 'Disponível'))
         motorista_txt = str(row.get('motorista_responsavel', 'Nenhum / Na Empresa'))
@@ -285,29 +283,28 @@ def render_dashboard(contar_registros_fn=None):
     with tab_contratos:
         df_v = dados["df_veiculos_completo"]
         if not df_v.empty:
+            df_alugados = pd.DataFrame()
+            df_proprios = pd.DataFrame()
+            
             try:
                 col_tipo = next((c for c in df_v.columns if 'tipo' in c.lower()), None)
                 if col_tipo:
                     df_alugados = df_v[df_v[col_tipo].astype(str).str.lower().str.contains("alugado|terceirizado|locado", na=False)]
                     df_proprios = df_v[df_v[col_tipo].astype(str).str.lower().str.contains("próprio|proprio", na=False)]
                 else:
-                    df_alugados = pd.DataFrame()
                     df_proprios = df_v
             except Exception:
-                df_alugados = pd.DataFrame()
+                df_proprios = df_v
+
+            # Segurança: se nenhuma aba capturar por filtro, joga tudo em próprios para nunca sumirem os cartões
+            if df_alugados.empty and df_proprios.empty:
                 df_proprios = df_v
 
             sub1, sub2 = st.tabs(["📋 Alugados / Terceirizados", "🏢 Próprios"])
             with sub1:
-                if not df_alugados.empty:
-                    render_cards_veiculos(df_alugados)
-                else:
-                    st.info("Nenhum veículo alugado encontrado.")
+                render_cards_veiculos(df_alugados)
             with sub2:
-                if not df_proprios.empty:
-                    render_cards_veiculos(df_proprios)
-                else:
-                    st.info("Nenhum veículo próprio encontrado.")
+                render_cards_veiculos(df_proprios)
         else:
             st.info("Nenhum veículo registado.")
 
@@ -338,7 +335,6 @@ def render_dashboard(contar_registros_fn=None):
         except Exception:
             st.info("Sem ocorrências.")
 
-    # Painel de Diagnóstico na parte inferior para conferirmos os dados gravados
     with st.expander("🛠️ Diagnóstico de Checklists (Ver Dados Crus)"):
         st.write("Últimos registos encontrados na tabela `checklists`:")
         if not dados["df_debug_checklists"].empty:
