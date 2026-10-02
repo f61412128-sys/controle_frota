@@ -70,12 +70,47 @@ def carregar_dados_dashboard():
             custo_total_manut = 0.0
 
         try:
-            df_veiculos_completo = pd.read_sql_query(
-                "SELECT placa, marca, modelo, tipo_propriedade, locadora, inicio_contrato, fim_contrato, valor_mensal, status FROM veiculos WHERE status != 'Inativo'",
-                conn,
-            )
+            # Query melhorada para buscar o status do checklist mais recente e o motorista responsável
+            query_veiculos = """
+                SELECT 
+                    v.id,
+                    v.placa, 
+                    v.marca, 
+                    v.modelo, 
+                    v.tipo_propriedade, 
+                    v.locadora, 
+                    v.inicio_contrato, 
+                    v.fim_contrato, 
+                    v.valor_mensal, 
+                    v.status,
+                    c.status_veiculo AS status_checklist,
+                    m.nome AS motorista_responsavel
+                FROM veiculos v
+                LEFT JOIN (
+                    SELECT DISTINCT ON (veiculo_id) veiculo_id, status_veiculo
+                    FROM checklists
+                    ORDER BY veiculo_id, id DESC
+                ) c ON v.id = c.veiculo_id
+                LEFT JOIN (
+                    SELECT DISTINCT ON (veiculo_id) veiculo_id, motorista_id
+                    FROM checklists
+                    ORDER BY veiculo_id, id DESC
+                ) ch_mot ON v.id = ch_mot.veiculo_id
+                LEFT JOIN motoristas m ON ch_mot.motorista_id = m.id
+                WHERE v.status != 'Inativo'
+            """
+            df_veiculos_completo = pd.read_sql_query(query_veiculos, conn)
         except Exception:
-            df_veiculos_completo = pd.DataFrame()
+            # Fallback caso a tabela checklists ainda esteja a ser estruturada
+            try:
+                df_veiculos_completo = pd.read_sql_query(
+                    "SELECT placa, marca, modelo, tipo_propriedade, locadora, inicio_contrato, fim_contrato, valor_mensal, status FROM veiculos WHERE status != 'Inativo'",
+                    conn,
+                )
+                df_veiculos_completo["status_checklist"] = None
+                df_veiculos_completo["motorista_responsavel"] = None
+            except Exception:
+                df_veiculos_completo = pd.DataFrame()
 
         try:
             df_manutencoes = pd.read_sql_query(
@@ -168,18 +203,30 @@ def render_cards_veiculos(df_veiculos):
         marca = row.get('marca', '')
         modelo = row.get('modelo', '')
         tipo = row.get('tipo_propriedade', 'N/A')
-        status = row.get('status', 'Ativo')
         locadora = row.get('locadora', '-')
+        
+        # Pega o status do último checklist se existir, senão assume o status do veículo ou padrão
+        status_chk = row.get('status_checklist')
+        if status_chk and str(status_chk) != 'nan':
+            # Exemplo de adaptação: se o checklist indica que está na empresa/disponível
+            texto_status = str(status_chk)
+        else:
+            texto_status = row.get('status', 'Ativo')
+
+        # Nome do motorista responsável atual
+        motorista = row.get('motorista_responsavel')
+        motorista_txt = motorista if motorista and str(motorista) != 'nan' else 'Nenhum / Na Empresa'
 
         st.markdown(f"""
             <div class="veiculo-card">
                 <div class="veiculo-header">
                     <span class="veiculo-placa">🚗 {placa}</span>
-                    <span style="font-size: 11px; color: #34d399; font-weight: bold;">{status}</span>
+                    <span style="font-size: 11px; color: #34d399; font-weight: bold;">{texto_status}</span>
                 </div>
                 <div class="veiculo-info">Modelo: <span>{marca} {modelo}</span></div>
                 <div class="veiculo-info">Tipo: <span>{tipo}</span></div>
                 <div class="veiculo-info">Locadora: <span>{locadora if locadora and str(locadora) != 'nan' else 'N/A'}</span></div>
+                <div class="veiculo-info">Motorista: <span>{motorista_txt}</span></div>
             </div>
         """, unsafe_allow_html=True)
 
