@@ -6,6 +6,7 @@ import urllib.request
 from PIL import Image
 import pandas as pd
 import streamlit as st
+import psycopg2.extras # Importante para garantir o tratamento binário correto
 from database.connection import get_connection
 from views.services.cadastros_service import listar_motoristas, listar_veiculos
 
@@ -55,8 +56,8 @@ def salvar_checklist(
     fuso_brasilia = datetime.timezone(datetime.timedelta(hours=-3))
     data_hora_atual = datetime.datetime.now(fuso_brasilia).strftime("%Y-%m-%d %H:%M:%S")
 
-    # Garante conversão correta para bytes binários se houver imagem
-    foto_param = memoryview(foto_bytes) if foto_bytes else None
+    # Envolve os bytes no adaptador binário oficial do psycopg2 para campos BYTEA do Postgres
+    foto_param = psycopg2.Binary(foto_bytes) if foto_bytes else None
 
     conn = get_connection()
     cursor = conn.cursor()
@@ -454,8 +455,13 @@ def render():
             titulo_card = f"{status_icone} {reg['placa']} - {reg['modelo']}{op_txt}{loc_resumida} | 🕒 {data_formatada}"
 
             with st.expander(titulo_card):
-                # Verifica de forma segura se a foto existe e não está vazia
-                tem_foto_valida = reg.get("foto") is not None and len(bytes(reg.get("foto"))) > 0 if isinstance(reg.get("foto"), (bytes, memoryview)) else bool(reg.get("foto"))
+                foto_val = reg.get("foto")
+                tem_foto_valida = False
+                if foto_val is not None:
+                    if isinstance(foto_val, memoryview):
+                        foto_val = bytes(foto_val)
+                    if isinstance(foto_val, bytes) and len(foto_val) > 0:
+                        tem_foto_valida = True
 
                 col_detalhes, col_foto_card = st.columns([3, 1] if tem_foto_valida else [1, 0.001])
 
@@ -473,17 +479,13 @@ def render():
                 if tem_foto_valida:
                     with col_foto_card:
                         try:
-                            foto_hist = reg["foto"]
-                            if isinstance(foto_hist, memoryview):
-                                foto_hist = bytes(foto_hist)
-
                             st.write("🖼 **Avaria:**")
-                            imagem_obj = Image.open(io.BytesIO(foto_hist))
+                            imagem_obj = Image.open(io.BytesIO(foto_val))
                             st.image(imagem_obj, width=120)
                             with st.expander("🔍 Ampliar Foto"):
                                 st.image(imagem_obj, use_container_width=True)
-                        except Exception:
-                            st.warning("Erro ao carregar imagem.")
+                        except Exception as e:
+                            st.warning(f"Erro ao carregar imagem: {e}")
 
                 itens = buscar_itens_checklist(reg["id"])
                 itens_falha = [i for i in itens if i["resultado"] == "NÃO OK"]
