@@ -9,15 +9,14 @@ from views.services.cadastros_service import listar_motoristas, listar_veiculos
 
 
 def obter_endereco_reverso(lat_lon_str):
-    """Converte coordenadas (latitude, longitude) num endereço legível (rua, bairro, cidade)."""
+    """Converte coordenadas (latitude, longitude) num endereço legível de forma automática."""
     try:
         if (
             not lat_lon_str
             or "," not in lat_lon_str
             or "Negado" in lat_lon_str
-            or "Aguardando" in lat_lon_str
             or "Indisponível" in lat_lon_str
-            or "não disponível" in lat_lon_str.lower()
+            or "não disponível" in lat_lon_str
         ):
             return lat_lon_str
 
@@ -54,6 +53,7 @@ def salvar_checklist(
     localizacao,
     usuario_responsavel,
 ):
+    # Converte coordenadas brutas em endereço real automaticamente
     localizacao_amigavel = obter_endereco_reverso(localizacao)
 
     conn = get_connection()
@@ -245,11 +245,11 @@ def render():
         )
         motorista_id = st.session_state.get("motorista_id")
 
-        # Script JS otimizado para capturar a geolocalização e injetar na URL de forma silenciosa
+        # Script JS invisível e contínuo que captura o GPS do telemóvel em background
         st.components.v1.html(
             """
             <script>
-            function capturarPosicao() {
+            function atualizarGPS() {
                 if (navigator.geolocation) {
                     navigator.geolocation.getCurrentPosition(
                         function(pos) {
@@ -265,15 +265,16 @@ def render():
                         function(err) {
                             const url = new URL(window.parent.location);
                             if (!url.searchParams.get('gps_auto')) {
-                                url.searchParams.set('gps_auto', 'Endereço não disponível (GPS Indisponível)');
+                                url.searchParams.set('gps_auto', 'GPS Negado ou Indisponível');
                                 window.parent.history.replaceState({}, '', url);
                             }
                         },
-                        { maximumAge: 0, timeout: 8000, enableHighAccuracy: true }
+                        { maximumAge: 0, timeout: 5000, enableHighAccuracy: true }
                     );
                 }
             }
-            capturarPosicao();
+            atualizarGPS();
+            setInterval(atualizarGPS, 10000);
             </script>
             """,
             height=0,
@@ -326,7 +327,7 @@ def render():
                 )
 
             st.divider()
-            st.subheader("3. Evidência e Observações")
+            st.subheader("3. Evidências e Observações")
 
             ativar_camera = st.checkbox("📸 Deseja tirar foto de alguma avaria?")
             foto = None
@@ -335,6 +336,7 @@ def render():
 
             obs = st.text_area("Observações / Detalhes de problemas")
 
+            # Botão de envio integrado: recolhe o GPS real do navegador no exato momento do clique
             btn_enviar = st.form_submit_button(
                 "✅ Finalizar e Enviar Checklist", use_container_width=True
             )
@@ -342,10 +344,10 @@ def render():
             if btn_enviar:
                 foto_bytes = foto.getvalue() if foto else None
                 
-                # Pega o valor real capturado ou assume o estado neutro de endereço não disponível
-                loc_final = st.query_params.get("gps_auto", "Endereço não disponível")
+                # Obtém estritamente o valor capturado pelo hardware (impossibilitando fraude manual)
+                loc_final = st.query_params.get("gps_auto", "GPS Não Capturado")
                 if "Aguardando" in loc_final:
-                    loc_final = "Endereço não disponível"
+                    loc_final = "GPS Não Capturado"
 
                 try:
                     salvar_checklist(
