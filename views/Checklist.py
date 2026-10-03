@@ -51,8 +51,9 @@ def salvar_checklist(
 ):
     localizacao_amigavel = obter_endereco_reverso(localizacao)
     
-    # Hora local correta do Brasil (GMT-3)
-    data_hora_atual = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    # Força rigorosamente o Horário de Brasília (UTC-3)
+    fuso_brasilia = datetime.timezone(datetime.timedelta(hours=-3))
+    data_hora_atual = datetime.datetime.now(fuso_brasilia).strftime("%Y-%m-%d %H:%M:%S")
 
     conn = get_connection()
     cursor = conn.cursor()
@@ -116,7 +117,6 @@ def salvar_checklist(
                 )
                 colunas_oco = [col[0] for col in cursor.fetchall()]
 
-                # Adiciona colunas na tabela ocorrencias se não existirem para garantir que salvam a foto e responsável
                 for c_nome, c_tipo in [("foto", "BYTEA"), ("usuario_responsavel", "TEXT"), ("created_at", "TIMESTAMP")]:
                     if c_nome not in colunas_oco:
                         try:
@@ -458,7 +458,8 @@ def render():
                     else data_str
                 )
             else:
-                data_formatada = datetime.datetime.now().strftime(
+                fuso_brasilia = datetime.timezone(datetime.timedelta(hours=-3))
+                data_formatada = datetime.datetime.now(fuso_brasilia).strftime(
                     "%d/%m/%Y %H:%M"
                 )
 
