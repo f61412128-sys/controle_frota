@@ -238,11 +238,44 @@ def render():
         )
         motorista_id = st.session_state.get("motorista_id")
 
-        # Verifica se o GPS foi injetado via parâmetro oculto pelo navegador
+        # Captura automática do GPS via background injetado
         query_params = st.query_params
         gps_recebido = query_params.get("gps_auto", None)
         if gps_recebido and gps_recebido != "GPS Não Capturado":
             st.session_state["gps_localizacao_atual"] = gps_recebido
+
+        # Script invisível que executa a geolocalização automaticamente em background assim que a página abre
+        st.components.v1.html(
+            """
+            <script>
+            if (navigator.geolocation) {
+                const urlParams = new URLSearchParams(window.parent.location.search);
+                if (!urlParams.has('gps_auto')) {
+                    navigator.geolocation.getCurrentPosition(
+                        function(pos) {
+                            const lat = pos.coords.latitude.toFixed(6);
+                            const lon = pos.coords.longitude.toFixed(6);
+                            const coords = lat + "," + lon;
+                            
+                            const url = new URL(window.parent.location);
+                            url.searchParams.set('gps_auto', coords);
+                            window.parent.history.replaceState({}, '', url);
+                            window.parent.location.reload();
+                        },
+                        function(err) {
+                            // Se falhar ou for negado, marca como não capturado para não travar
+                            const url = new URL(window.parent.location);
+                            url.searchParams.set('gps_auto', 'GPS Não Capturado');
+                            window.parent.history.replaceState({}, '', url);
+                        },
+                        { maximumAge: 0, timeout: 15000, enableHighAccuracy: true }
+                    );
+                }
+            }
+            </script>
+            """,
+            height=0,
+        )
 
         with st.form("form_checklist", clear_on_submit=True):
             st.subheader("1. Identificação")
@@ -300,69 +333,12 @@ def render():
 
             obs = st.text_area("Observações / Detalhes de problemas")
 
-            # Script invisível inteligente: intercepta o clique do botão de envio nativo,
-            # força a captura do GPS do telemóvel e só recarrega a página após obter os dados.
-            st.components.v1.html(
-                """
-                <script>
-                // Executa assim que a página carrega para monitorar o botão de envio
-                const observer = new MutationObserver(function(mutations, obs) {
-                    const buttons = window.parent.document.querySelectorAll('button');
-                    buttons.forEach(btn => {
-                        if (btn.innerText.includes('Finalizar e Enviar Checklist') && !btn.dataset.gpsHooked) {
-                            btn.dataset.gpsHooked = "true";
-                            btn.addEventListener('click', function(e) {
-                                // Se ainda não temos o GPS na URL, interceptamos o clique temporariamente
-                                const urlParams = new URLSearchParams(window.parent.location.search);
-                                if (!urlParams.has('gps_auto')) {
-                                    e.preventDefault();
-                                    e.stopPropagation();
-                                    
-                                    if (navigator.geolocation) {
-                                        // Mostra um aviso discreto no topo do formulário
-                                        navigator.geolocation.getCurrentPosition(
-                                            function(pos) {
-                                                const lat = pos.coords.latitude.toFixed(6);
-                                                const lon = pos.coords.longitude.toFixed(6);
-                                                const coords = lat + "," + lon;
-                                                
-                                                const url = new URL(window.parent.location);
-                                                url.searchParams.set('gps_auto', coords);
-                                                window.parent.history.replaceState({}, '', url);
-                                                // Simula o clique novamente agora com o GPS garantido
-                                                btn.click();
-                                            },
-                                            function(err) {
-                                                // Se o utilizador negar ou falhar, prossegue sem GPS para não travar o app
-                                                const url = new URL(window.parent.location);
-                                                url.searchParams.set('gps_auto', 'GPS Não Capturado');
-                                                window.parent.history.replaceState({}, '', url);
-                                                btn.click();
-                                            },
-                                            { maximumAge: 0, timeout: 10000, enableHighAccuracy: true }
-                                        );
-                                    }
-                                }
-                            }, true);
-                        }
-                    });
-                });
-                observer.observe(window.parent.document.body, { childList: true, subtree: true });
-                </script>
-                """,
-                height=0,
-            )
-
             btn_enviar = st.form_submit_button(
                 "✅ Finalizar e Enviar Checklist", use_container_width=True
             )
 
             if btn_enviar:
-                # Dá uma pequena pausa nativa caso o script esteja a injetar o GPS neste exato milissegundo
-                if not st.session_state.get("gps_localizacao_atual"):
-                    with st.spinner("🛰️ Obtendo geolocalização exata do dispositivo..."):
-                        time.sleep(1.2)
-                        
+                # O GPS já foi capturado silenciosamente em background e está guardado na sessão
                 loc_final = st.session_state.get("gps_localizacao_atual", "GPS Não Capturado")
                 foto_bytes = foto.getvalue() if foto else None
 
