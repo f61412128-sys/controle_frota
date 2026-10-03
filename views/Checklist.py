@@ -17,6 +17,7 @@ def obter_endereco_reverso(lat_lon_str):
             or "Negado" in lat_lon_str
             or "Indisponível" in lat_lon_str
             or "não disponível" in lat_lon_str
+            or "Capturado" in lat_lon_str
         ):
             return lat_lon_str
 
@@ -245,36 +246,45 @@ def render():
         )
         motorista_id = st.session_state.get("motorista_id")
 
-        # Script JS invisível e contínuo que captura o GPS do telemóvel em background
+        # Componente JavaScript inteligente ligado diretamente ao botão nativo do Streamlit
         st.components.v1.html(
             """
             <script>
-            function atualizarGPS() {
-                if (navigator.geolocation) {
-                    navigator.geolocation.getCurrentPosition(
-                        function(pos) {
-                            const lat = pos.coords.latitude.toFixed(6);
-                            const lon = pos.coords.longitude.toFixed(6);
-                            const coords = lat + "," + lon;
-                            const url = new URL(window.parent.location);
-                            if (url.searchParams.get('gps_auto') !== coords) {
+            // Intercepta o clique no botão de envio dentro da estrutura do Streamlit
+            document.addEventListener('click', function(e) {
+                const target = e.target.closest('button');
+                if (target && target.innerText.includes('Finalizar e Enviar Checklist')) {
+                    // Evita o envio imediato por 1 segundo para dar tempo ao GPS de responder
+                    if (!window.gpsCapturado && navigator.geolocation) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        
+                        navigator.geolocation.getCurrentPosition(
+                            function(pos) {
+                                const lat = pos.coords.latitude.toFixed(6);
+                                const lon = pos.coords.longitude.toFixed(6);
+                                const coords = lat + "," + lon;
+                                
+                                const url = new URL(window.parent.location);
                                 url.searchParams.set('gps_auto', coords);
                                 window.parent.history.replaceState({}, '', url);
-                            }
-                        },
-                        function(err) {
-                            const url = new URL(window.parent.location);
-                            if (!url.searchParams.get('gps_auto')) {
+                                
+                                window.gpsCapturado = true;
+                                target.click();
+                            },
+                            function(err) {
+                                const url = new URL(window.parent.location);
                                 url.searchParams.set('gps_auto', 'GPS Negado ou Indisponível');
                                 window.parent.history.replaceState({}, '', url);
-                            }
-                        },
-                        { maximumAge: 0, timeout: 5000, enableHighAccuracy: true }
-                    );
+                                
+                                window.gpsCapturado = true;
+                                target.click();
+                            },
+                            { maximumAge: 0, timeout: 6000, enableHighAccuracy: true }
+                        );
+                    }
                 }
-            }
-            atualizarGPS();
-            setInterval(atualizarGPS, 10000);
+            }, true);
             </script>
             """,
             height=0,
@@ -336,7 +346,7 @@ def render():
 
             obs = st.text_area("Observações / Detalhes de problemas")
 
-            # Botão de envio integrado: recolhe o GPS real do navegador no exato momento do clique
+            # Botão principal de envio
             btn_enviar = st.form_submit_button(
                 "✅ Finalizar e Enviar Checklist", use_container_width=True
             )
@@ -344,10 +354,8 @@ def render():
             if btn_enviar:
                 foto_bytes = foto.getvalue() if foto else None
                 
-                # Obtém estritamente o valor capturado pelo hardware (impossibilitando fraude manual)
+                # Resgata o GPS capturado no instante do clique
                 loc_final = st.query_params.get("gps_auto", "GPS Não Capturado")
-                if "Aguardando" in loc_final:
-                    loc_final = "GPS Não Capturado"
 
                 try:
                     salvar_checklist(
