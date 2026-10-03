@@ -96,7 +96,7 @@ def salvar_checklist(
         tem_pendencia = any(res == "NÃO OK" for res in itens_respostas.values())
         resultado_geral = "Com pendências" if tem_pendencia else "Aprovado"
 
-        # 2. Salva o Checklist e obtém o ID gerado (PostgreSQL utiliza RETURNING id)
+        # 2. Salva o Checklist e obtém o ID gerado
         cursor.execute(
             """
             INSERT INTO checklists (veiculo_id, motorista_id, tipo_operacao, km, resultado, observacoes, localizacao, foto, usuario_responsavel)
@@ -168,7 +168,7 @@ def salvar_checklist(
 
 
 def buscar_historico_checklists():
-    """Consulta o histórico de checklists de forma segura na base de dados PostgreSQL."""
+    """Consulta o histórico de checklists ordenando e tratando data/hora corretamente."""
     conn = get_connection()
     cursor = conn.cursor()
 
@@ -405,7 +405,7 @@ def render():
                     st.error(f"Erro ao salvar checklist: {e}")
 
     # -------------------------------------------------------------------------
-    # ABA 2: HISTÓRICO DE REGISTROS (ÁREA EXCLUSIVA PARA ADMIN / CONSULTAS)
+    # ABA 2: HISTÓRICO DE REGISTROS
     # -------------------------------------------------------------------------
     with tab_historico:
         st.caption(
@@ -464,26 +464,27 @@ def render():
             status_icone = (
                 "🔴" if reg["resultado"] == "Com pendências" else "🟢"
             )
-            data_formatada = reg.get("created_at", "Data N/A")
-            loc_txt = (
-                f" | 📍 {reg['localizacao']}"
-                if reg.get("localizacao")
-                else ""
-            )
+            
+            # Formatação limpa de Data e Hora
+            raw_data = str(reg.get("created_at", ""))
+            if raw_data and len(raw_data) >= 19:
+                data_formatada = raw_data[:19] # Corta milissegundos excessivos se houver
+            else:
+                data_formatada = raw_data if raw_data else "Data N/A"
+
+            localizacao_txt = reg.get('localizacao', 'Não informada')
             op_txt = f" | 🔄 {reg.get('tipo_operacao', 'N/A')}"
+            loc_resumida = f" | 📍 {localizacao_txt[:35]}..." if len(localizacao_txt) > 35 else f" | 📍 {localizacao_txt}"
 
             titulo_card = (
-                f"{status_icone} {reg['placa']} - {reg['modelo']}{op_txt}{loc_txt} |"
-                f" {data_formatada}"
+                f"{status_icone} {reg['placa']} - {reg['modelo']}{op_txt}{loc_resumida} | 🕒 {data_formatada}"
             )
 
             with st.expander(titulo_card):
                 st.write(f"**Tipo de Operação:** {reg.get('tipo_operacao', 'N/A')}")
                 st.write(f"**Responsável / Admin:** {reg['motorista_nome']}")
-                st.write(
-                    f"**Localização Registrada (GPS):**"
-                    f" {reg.get('localizacao', 'Não informada')}"
-                )
+                st.write(f"**Data e Hora do Registro:** {data_formatada}")
+                st.write(f"**Endereço / Localização (GPS):** {localizacao_txt}")
                 st.write(f"**KM Inspecionado:** {reg['km']} km")
                 st.write(f"**Resultado Geral:** {reg['resultado']}")
 
