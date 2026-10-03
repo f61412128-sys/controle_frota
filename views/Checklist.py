@@ -17,6 +17,7 @@ def obter_endereco_reverso(lat_lon_str):
             or "Negado" in lat_lon_str
             or "Aguardando" in lat_lon_str
             or "Indisponível" in lat_lon_str
+            or "não disponível" in lat_lon_str.lower()
         ):
             return lat_lon_str
 
@@ -244,35 +245,35 @@ def render():
         )
         motorista_id = st.session_state.get("motorista_id")
 
-        # Script JS invisível rodando em background para tentar capturar a geolocalização sem poluir o ecrã
+        # Script JS otimizado para capturar a geolocalização e injetar na URL de forma silenciosa
         st.components.v1.html(
             """
             <script>
-            function tentarGPS() {
+            function capturarPosicao() {
                 if (navigator.geolocation) {
                     navigator.geolocation.getCurrentPosition(
-                        function(position) {
-                            const lat = position.coords.latitude.toFixed(6);
-                            const lon = position.coords.longitude.toFixed(6);
-                            const coords = lat + ", " + lon;
+                        function(pos) {
+                            const lat = pos.coords.latitude.toFixed(6);
+                            const lon = pos.coords.longitude.toFixed(6);
+                            const coords = lat + "," + lon;
                             const url = new URL(window.parent.location);
                             if (url.searchParams.get('gps_auto') !== coords) {
                                 url.searchParams.set('gps_auto', coords);
                                 window.parent.history.replaceState({}, '', url);
                             }
                         },
-                        function(error) {
+                        function(err) {
                             const url = new URL(window.parent.location);
                             if (!url.searchParams.get('gps_auto')) {
-                                url.searchParams.set('gps_auto', 'Localização por Pátio / Base');
+                                url.searchParams.set('gps_auto', 'Endereço não disponível (GPS Indisponível)');
                                 window.parent.history.replaceState({}, '', url);
                             }
                         },
-                        { maximumAge: 0, timeout: 10000, enableHighAccuracy: true }
+                        { maximumAge: 0, timeout: 8000, enableHighAccuracy: true }
                     );
                 }
             }
-            tentarGPS();
+            capturarPosicao();
             </script>
             """,
             height=0,
@@ -341,10 +342,10 @@ def render():
             if btn_enviar:
                 foto_bytes = foto.getvalue() if foto else None
                 
-                # Captura a geolocalização guardada na query string ou define um padrão limpo caso o navegador bloqueie
-                loc_final = st.query_params.get("gps_auto", "Localização da Frota / Pátio Principal")
+                # Pega o valor real capturado ou assume o estado neutro de endereço não disponível
+                loc_final = st.query_params.get("gps_auto", "Endereço não disponível")
                 if "Aguardando" in loc_final:
-                    loc_final = "Localização da Frota / Pátio Principal"
+                    loc_final = "Endereço não disponível"
 
                 try:
                     salvar_checklist(
