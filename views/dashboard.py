@@ -150,7 +150,7 @@ def render_dashboard(contar_registros_fn=None):
         else pd.DataFrame()
     )
 
-    # Carregar dados de abastecimentos para calcular consumo
+    # Carregar dados de abastecimentos
     df_abastecimentos = pd.DataFrame()
     for t_abast in ["abastecimentos", "abastecimento", "combustivel"]:
         if t_abast in tabelas_existentes:
@@ -160,7 +160,6 @@ def render_dashboard(contar_registros_fn=None):
                 break
 
     df_checklists = pd.DataFrame()
-
     for t in ["checklists", "checklist", "historico_checklists", "inspecoes"]:
         if t in tabelas_existentes:
             df_temp = ler_tabela_direta(f"SELECT * FROM {t}")
@@ -190,10 +189,8 @@ def render_dashboard(contar_registros_fn=None):
             v_id = v_row.get("id")
             v_placa = str(v_row.get("placa", "")).strip().upper()
 
-            # Cálculo de consumo baseado nos abastecimentos
             consumo_str = "Não calculado"
             if not df_abastecimentos.empty:
-                # Tenta filtrar por veiculo_id ou placa
                 mask_abast = pd.Series(False, index=df_abastecimentos.index)
                 if "veiculo_id" in df_abastecimentos.columns and v_id is not None:
                     mask_abast |= df_abastecimentos["veiculo_id"] == v_id
@@ -208,7 +205,6 @@ def render_dashboard(contar_registros_fn=None):
 
                 df_v_abast = df_abastecimentos[mask_abast]
                 if not df_v_abast.empty:
-                    # Procura colunas de KM/odômetro e litros
                     col_km = next(
                         (
                             c
@@ -254,7 +250,6 @@ def render_dashboard(contar_registros_fn=None):
                         except Exception:
                             pass
 
-                    # Caso tenha coluna direta de consumo médio ou média calculada
                     if consumo_str == "Não calculado":
                         for c_med in [
                             "consumo_medio",
@@ -302,7 +297,6 @@ def render_dashboard(contar_registros_fn=None):
                         pass
 
                 ult_chk = df_chk_veiculo.iloc[0]
-
                 raw_data = ult_chk.get(col_data) if col_data else None
                 if isinstance(raw_data, datetime.datetime):
                     data_formatada = raw_data.strftime("%d/%m/%Y %H:%M")
@@ -336,39 +330,6 @@ def render_dashboard(contar_registros_fn=None):
                         resp = str(ult_chk[col_resp])
                         break
 
-                if resp == "Administrador / Sistema" or resp.isdigit():
-                    for id_col in ["usuario_id", "admin_id", "criado_por_id"]:
-                        if (
-                            id_col in ult_chk
-                            and pd.notna(ult_chk[id_col])
-                            and not df_usuarios.empty
-                            and "id" in df_usuarios.columns
-                        ):
-                            u_match = df_usuarios[
-                                df_usuarios["id"] == ult_chk[id_col]
-                            ]
-                            if not u_match.empty:
-                                resp = str(
-                                    u_match.iloc[0].get(
-                                        "nome",
-                                        u_match.iloc[0].get("usuario", "Admin"),
-                                    )
-                                )
-                                break
-
-                if resp == "Administrador / Sistema" or resp.isdigit():
-                    motorista_id = ult_chk.get("motorista_id")
-                    if (
-                        motorista_id is not None
-                        and not df_motoristas.empty
-                        and "id" in df_motoristas.columns
-                    ):
-                        m_match = df_motoristas[
-                            df_motoristas["id"] == motorista_id
-                        ]
-                        if not m_match.empty:
-                            resp = str(m_match.iloc[0].get("nome", "Motorista"))
-
                 tipo_mov = ""
                 for col_tipo in [
                     "tipo_operacao",
@@ -386,11 +347,6 @@ def render_dashboard(contar_registros_fn=None):
                     k in tipo_mov_lower for k in ["saida", "retirada", "uso"]
                 ):
                     status_disp = "Indisponível"
-                elif any(
-                    k in tipo_mov_lower
-                    for k in ["entrada", "devolucao", "retorno", "chegada"]
-                ):
-                    status_disp = "Disponível"
                 else:
                     status_disp = "Disponível"
 
@@ -474,34 +430,9 @@ def render_dashboard(contar_registros_fn=None):
                 )
             except Exception:
                 pass
-    elif not df_veiculos.empty:
-        col_venc_v = None
-        for c in [
-            "vencimento_contrato",
-            "data_fim_contrato",
-            "fim_contrato",
-            "vencimento",
-        ]:
-            if c in df_veiculos.columns:
-                col_venc_v = c
-                break
-        if col_venc_v:
-            try:
-                hoje = pd.Timestamp.now().normalize()
-                datas_venc = pd.to_datetime(
-                    df_veiculos[col_venc_v], errors="coerce"
-                )
-                limite = hoje + pd.Timedelta(days=30)
-                total_venc_contratos = int(
-                    ((datas_venc >= hoje) & (datas_venc <= limite)).sum()
-                    + (datas_venc < hoje).sum()
-                )
-            except Exception:
-                pass
 
     df_alugados = pd.DataFrame()
     df_proprios = pd.DataFrame()
-
     if not df_veiculos.empty:
         col_alvo = None
         for c in ["tipo_propriedade", "tipo", "posse", "categoria"]:
@@ -541,8 +472,16 @@ def render_dashboard(contar_registros_fn=None):
 
     st.divider()
 
-    tab_contratos, tab_rodizio, tab_manut, tab_pendencias = st.tabs([
+    # Criação das abas, incluindo a nova aba de Consumo
+    (
+        tab_contratos,
+        tab_consumo,
+        tab_rodizio,
+        tab_manut,
+        tab_pendencias,
+    ) = st.tabs([
         "📄 Gestão de Contratos & Frota",
+        "⛽ Consumo & Abastecimentos",
         "🚘 Rodízio Hoje",
         "🛠 Manutenções Recentes",
         "⚠ Ocorrências",
@@ -556,6 +495,212 @@ def render_dashboard(contar_registros_fn=None):
             render_cards_veiculos_estilizados(df_alugados)
         with sub_prop:
             render_cards_veiculos_estilizados(df_proprios)
+
+    with tab_consumo:
+        st.markdown("##### 📊 Indicadores de Consumo e Combustível")
+
+        # Cálculos de consumo do dia e do mês se houver dados
+        custo_dia = 0.0
+        litros_dia = 0.0
+        custo_mes = 0.0
+        litros_mes = 0.0
+
+        if not df_abastecimentos.empty:
+            col_data_abast = next(
+                (
+                    c
+                    for c in [
+                        "data",
+                        "data_abastecimento",
+                        "created_at",
+                        "data_hora",
+                    ]
+                    if c in df_abastecimentos.columns
+                ),
+                None,
+            )
+            col_valor_abast = next(
+                (
+                    c
+                    for c in [
+                        "valor",
+                        "valor_total",
+                        "custo",
+                        "preco_total",
+                    ]
+                    if c in df_abastecimentos.columns
+                ),
+                None,
+            )
+            col_litros_abast = next(
+                (
+                    c
+                    for c in [
+                        "litros",
+                        "quantidade",
+                        "qtd_litros",
+                        "volume",
+                    ]
+                    if c in df_abastecimentos.columns
+                ),
+                None,
+            )
+
+            if col_data_abast:
+                try:
+                    df_abastecimentos["_dt"] = pd.to_datetime(
+                        df_abastecimentos[col_data_abast], errors="coerce"
+                    )
+                    hoje_ts = pd.Timestamp.now().normalize()
+                    mes_atual = hoje_ts.month
+                    ano_atual = hoje_ts.year
+
+                    mask_dia = df_abastecimentos["_dt"].dt.normalize() == hoje_ts
+                    mask_mes = (df_abastecimentos["_dt"].dt.month == mes_atual) & (
+                        df_abastecimentos["_dt"].dt.year == ano_atual
+                    )
+
+                    if col_valor_abast:
+                        vals = pd.to_numeric(
+                            df_abastecimentos[col_valor_abast]
+                            .astype(str)
+                            .str.replace("R$", "", regex=True)
+                            .str.replace(",", ".", regex=False),
+                            errors="coerce",
+                        )
+                        custo_dia = float(vals[mask_dia].sum())
+                        custo_mes = float(vals[mask_mes].sum())
+
+                    if col_litros_abast:
+                        lits = pd.to_numeric(
+                            df_abastecimentos[col_litros_abast], errors="coerce"
+                        )
+                        litros_dia = float(lits[mask_dia].sum())
+                        litros_mes = float(lits[mask_mes].sum())
+                except Exception:
+                    pass
+
+        # Métricas rápidas no topo da aba de consumo
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("⛽ Litros Hoje", f"{litros_dia:.1f} L")
+        m2.metric("💵 Gasto Hoje", f"R$ {custo_dia:,.2f}")
+        m3.metric("📅 Litros no Mês", f"{litros_mes:.1f} L")
+        m4.metric("💰 Gasto no Mês", f"R$ {custo_mes:,.2f}")
+
+        st.divider()
+        st.markdown("##### 🚗 Desempenho de Consumo por Veículo")
+
+        if df_veiculos.empty:
+            st.info("Nenhum veículo registado.")
+        else:
+            # Reutiliza o estilo dos cartões para exibir o consumo detalhado por carro
+            st.markdown(
+                """
+                <style>
+                .consumo-card {
+                    background-color: #111827;
+                    border: 1px solid #1f2937;
+                    border-left: 4px solid #10b981;
+                    padding: 12px 16px;
+                    border-radius: 8px;
+                    margin-bottom: 12px;
+                }
+                .consumo-header {
+                    font-size: 15px;
+                    font-weight: bold;
+                    color: #ffffff;
+                    margin-bottom: 8px;
+                }
+                .consumo-info {
+                    font-size: 13px;
+                    color: #9ca3af;
+                    margin-bottom: 4px;
+                }
+                .consumo-info span {
+                    color: #f3f4f6;
+                    font-weight: 500;
+                }
+                </style>
+            """,
+                unsafe_allow_html=True,
+            )
+
+            for _, row in df_veiculos.iterrows():
+                placa = str(row.get("placa", "N/A"))
+                modelo = str(row.get("modelo", "N/A"))
+                consumo = row.get("consumo_medio", "Não calculado")
+
+                # Calcula total gasto neste veículo específico se houver tabela de abastecimento
+                gasto_veiculo = 0.0
+                litros_veiculo = 0.0
+                km_percorrido = "Não registado"
+
+                if not df_abastecimentos.empty:
+                    v_id = row.get("id")
+                    mask_v = pd.Series(False, index=df_abastecimentos.index)
+                    if "veiculo_id" in df_abastecimentos.columns and v_id is not None:
+                        mask_v |= df_abastecimentos["veiculo_id"] == v_id
+                    if "placa" in df_abastecimentos.columns:
+                        mask_v |= (
+                            df_abastecimentos["placa"]
+                            .astype(str)
+                            .str.upper()
+                            .str.strip()
+                            == placa.upper()
+                        )
+
+                    df_abast_v = df_abastecimentos[mask_v]
+                    if not df_abast_v.empty:
+                        if col_valor_abast:
+                            gasto_veiculo = float(
+                                pd.to_numeric(
+                                    df_abast_v[col_valor_abast]
+                                    .astype(str)
+                                    .str.replace("R$", "", regex=True)
+                                    .str.replace(",", ".", regex=False),
+                                    errors="coerce",
+                                ).sum()
+                            )
+                        if col_litros_abast:
+                            litros_veiculo = float(
+                                pd.to_numeric(
+                                    df_abast_v[col_litros_abast], errors="coerce"
+                                ).sum()
+                            )
+                        col_km = next(
+                            (
+                                c
+                                for c in [
+                                    "km",
+                                    "quilometragem",
+                                    "odometro",
+                                    "km_atual",
+                                ]
+                                if c in df_abast_v.columns
+                            ),
+                            None,
+                        )
+                        if col_km:
+                            k_vals = pd.to_numeric(
+                                df_abast_v[col_km], errors="coerce"
+                            ).dropna()
+                            if len(k_vals) >= 2:
+                                km_percorrido = (
+                                    f"{k_vals.iloc[-1] - k_vals.iloc[0]} km"
+                                )
+
+                st.markdown(
+                    f"""
+                    <div class="consumo-card">
+                        <div class="consumo-header">⛽ {placa} - {modelo}</div>
+                        <div class="consumo-info">Consumo Médio: <span>{consumo}</span></div>
+                        <div class="consumo-info">KM Percorrido (Base Abastecimentos): <span>{km_percorrido}</span></div>
+                        <div class="consumo-info">Total Litros Abastecidos: <span>{litros_veiculo:.1f} L</span></div>
+                        <div class="consumo-info">Gasto Acumulado: <span>R$ {gasto_veiculo:,.2f}</span></div>
+                    </div>
+                """,
+                    unsafe_allow_html=True,
+                )
 
     with tab_rodizio:
         st.markdown("##### Consulta de Rodízio (SP)")
