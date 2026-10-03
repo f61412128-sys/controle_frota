@@ -150,6 +150,15 @@ def render_dashboard(contar_registros_fn=None):
         else pd.DataFrame()
     )
 
+    # Carregar dados de ocorrências / incidentes se existirem
+    df_ocorrencias = pd.DataFrame()
+    for t_oc in ["ocorrencias", "ocorrencia", "incidentes", "problemas"]:
+        if t_oc in tabelas_existentes:
+            df_temp = ler_tabela_direta(f"SELECT * FROM {t_oc}")
+            if not df_temp.empty:
+                df_ocorrencias = df_temp
+                break
+
     # Carregar dados de abastecimentos
     df_abastecimentos = pd.DataFrame()
     for t_abast in ["abastecimentos", "abastecimento", "combustivel"]:
@@ -396,7 +405,7 @@ def render_dashboard(contar_registros_fn=None):
                 except Exception:
                     pass
 
-    # Correção robusta para contagem de contratos vencidos/a vencer
+    # Contagem de contratos vencidos/a vencer
     total_venc_contratos = 0
     df_contratos = pd.DataFrame()
     for t_c in [
@@ -464,6 +473,8 @@ def render_dashboard(contar_registros_fn=None):
             except Exception:
                 pass
 
+    total_ocorrencias = len(df_ocorrencias) if not df_ocorrencias.empty else 0
+
     df_alugados = pd.DataFrame()
     df_proprios = pd.DataFrame()
     if not df_veiculos.empty:
@@ -500,7 +511,7 @@ def render_dashboard(contar_registros_fn=None):
     c5, c6, c7, c8 = st.columns(4)
     c5.metric("💰 Custo Manutenções", f"R$ {custo_total_manut:,.2f}")
     c6.metric("👨‍✈️ Motoristas", total_motoristas)
-    c7.metric("⚠ Ocorrências", 0)
+    c7.metric("⚠ Ocorrências", total_ocorrencias)
     c8.metric("📄 Venc. Contratos", total_venc_contratos)
 
     st.divider()
@@ -616,7 +627,6 @@ def render_dashboard(contar_registros_fn=None):
                 except Exception:
                     pass
 
-        # Métricas gerais no topo da aba
         m1, m2, m3, m4 = st.columns(4)
         m1.metric("⛽ Litros Hoje", f"{litros_dia:.1f} L")
         m2.metric("💵 Gasto Hoje", f"R$ {custo_dia:,.2f}")
@@ -631,7 +641,6 @@ def render_dashboard(contar_registros_fn=None):
         if df_veiculos.empty:
             st.info("Nenhum veículo registado.")
         else:
-            # Estilo dos cartões individuais por veículo para o consumo
             st.markdown(
                 """
                 <style>
@@ -726,7 +735,6 @@ def render_dashboard(contar_registros_fn=None):
                                     f"{k_vals.iloc[-1] - k_vals.iloc[0]} km"
                                 )
 
-                # Renderiza o card individual por carro dentro da aba de consumo
                 st.markdown(
                     f"""
                     <div class="consumo-card">
@@ -741,27 +749,207 @@ def render_dashboard(contar_registros_fn=None):
                 )
 
     with tab_rodizio:
-        st.markdown("##### Consulta de Rodízio (SP)")
+        st.markdown("##### 🚘 Consulta de Rodízio de Veículos (SP)")
         hoje_idx = datetime.datetime.now().weekday()
         regras = {
-            0: "Placas 1 e 2",
-            1: "Placas 3 e 4",
-            2: "Placas 5 e 6",
-            3: "Placas 7 e 8",
-            4: "Placas 9 e 0",
+            0: "Placas finais 1 e 2",
+            1: "Placas finais 3 e 4",
+            2: "Placas finais 5 e 6",
+            3: "Placas finais 7 e 8",
+            4: "Placas finais 9 e 0",
         }
+
+        st.markdown(
+            """
+            <style>
+            .rodizio-card {
+                background-color: #111827;
+                border: 1px solid #1f2937;
+                border-left: 4px solid #f59e0b;
+                padding: 14px 16px;
+                border-radius: 8px;
+                margin-bottom: 12px;
+            }
+            .rodizio-title {
+                font-size: 15px;
+                font-weight: bold;
+                color: #ffffff;
+                margin-bottom: 6px;
+            }
+            .rodizio-desc {
+                font-size: 13px;
+                color: #9ca3af;
+            }
+            .rodizio-desc span {
+                color: #f3f4f6;
+                font-weight: 500;
+            }
+            </style>
+        """,
+            unsafe_allow_html=True,
+        )
+
         if hoje_idx < 5:
-            st.warning(f"🚫 Restrição hoje: {regras.get(hoje_idx)}")
+            restricao_hoje = regras.get(hoje_idx)
+            st.markdown(
+                f"""
+                <div class="rodizio-card">
+                    <div class="rodizio-title">🚫 Restrição Ativa Hoje</div>
+                    <div class="rodizio-desc">Veículos afetados: <span>{restricao_hoje}</span></div>
+                </div>
+            """,
+                unsafe_allow_html=True,
+            )
+
+            # Filtra os veículos que terminam com os dígitos do rodízio de hoje
+            if not df_veiculos.empty:
+                st.markdown("##### Veículos da Frota com Rodízio Hoje:")
+                digitos_alvo = []
+                if hoje_idx == 0:
+                    digitos_alvo = ("1", "2")
+                elif hoje_idx == 1:
+                    digitos_alvo = ("3", "4")
+                elif hoje_idx == 2:
+                    digitos_alvo = ("5", "6")
+                elif hoje_idx == 3:
+                    digitos_alvo = ("7", "8")
+                elif hoje_idx == 4:
+                    digitos_alvo = ("9", "0")
+
+                df_rodizio_veiculos = df_veiculos[
+                    df_veiculos["placa"]
+                    .astype(str)
+                    .str.endswith(digitos_alvo, na=False)
+                ]
+                render_cards_veiculos_estilizados(df_rodizio_veiculos)
         else:
-            st.success("✅ Sem restrição no fim de semana.")
+            st.markdown(
+                """
+                <div class="rodizio-card" style="border-left-color: #10b981;">
+                    <div class="rodizio-title">✅ Fim de Semana</div>
+                    <div class="rodizio-desc">Não há restrição de rodízio municipal hoje para nenhum veículo.</div>
+                </div>
+            """,
+                unsafe_allow_html=True,
+            )
 
     with tab_manut:
+        st.markdown("##### 🛠 Histórico de Manutenções Recentes")
         if not df_manutencoes.empty:
-            st.dataframe(
-                df_manutencoes, use_container_width=True, hide_index=True
+            st.markdown(
+                """
+                <style>
+                .manut-card {
+                    background-color: #111827;
+                    border: 1px solid #1f2937;
+                    border-left: 4px solid #ef4444;
+                    padding: 12px 16px;
+                    border-radius: 8px;
+                    margin-bottom: 12px;
+                }
+                .manut-header {
+                    font-size: 15px;
+                    font-weight: bold;
+                    color: #ffffff;
+                    margin-bottom: 6px;
+                }
+                .manut-info {
+                    font-size: 13px;
+                    color: #9ca3af;
+                    margin-bottom: 4px;
+                }
+                .manut-info span {
+                    color: #f3f4f6;
+                    font-weight: 500;
+                }
+                </style>
+            """,
+                unsafe_allow_html=True,
             )
+
+            for _, row in df_manutencoes.iterrows():
+                m_id = row.get("veiculo_id", "N/A")
+                m_desc = row.get(
+                    "descricao",
+                    row.get("servico", row.get("tipo_manutencao", "Manutenção")),
+                )
+                m_custo = row.get(
+                    "valor", row.get("custo", row.get("preco", "0.00"))
+                )
+                m_data = row.get(
+                    "data", row.get("data_manutencao", row.get("created_at", "N/A"))
+                )
+                m_oficina = row.get("oficina", row.get("fornecedor", "Não informada"))
+
+                st.markdown(
+                    f"""
+                    <div class="manut-card">
+                        <div class="manut-header">🔧 {m_desc}</div>
+                        <div class="manut-info">Oficina / Fornecedor: <span>{m_oficina}</span></div>
+                        <div class="manut-info">Custo: <span>R$ {m_custo}</span></div>
+                        <div class="manut-info">Data: <span>{m_data}</span></div>
+                    </div>
+                """,
+                    unsafe_allow_html=True,
+                )
         else:
             st.info("Sem manutenções recentes registadas.")
 
     with tab_pendencias:
-        st.success("Nenhuma ocorrência pendente!")
+        st.markdown("##### ⚠ Registo de Ocorrências e Incidentes")
+        if not df_ocorrencias.empty:
+            st.markdown(
+                """
+                <style>
+                .ocorr-card {
+                    background-color: #111827;
+                    border: 1px solid #1f2937;
+                    border-left: 4px solid #eab308;
+                    padding: 12px 16px;
+                    border-radius: 8px;
+                    margin-bottom: 12px;
+                }
+                .ocorr-header {
+                    font-size: 15px;
+                    font-weight: bold;
+                    color: #ffffff;
+                    margin-bottom: 6px;
+                }
+                .ocorr-info {
+                    font-size: 13px;
+                    color: #9ca3af;
+                    margin-bottom: 4px;
+                }
+                .ocorr-info span {
+                    color: #f3f4f6;
+                    font-weight: 500;
+                }
+                </style>
+            """,
+                unsafe_allow_html=True,
+            )
+
+            for _, row in df_ocorrencias.iterrows():
+                oc_desc = row.get(
+                    "descricao",
+                    row.get("titulo", row.get("tipo_ocorrencia", "Ocorrência")),
+                )
+                oc_status = row.get("status", "Pendente")
+                oc_data = row.get("data", row.get("created_at", "N/A"))
+                oc_resp = row.get("responsavel", row.get("motorista", "N/A"))
+
+                st.markdown(
+                    f"""
+                    <div class="ocorr-card">
+                        <div class="ocorr-header">⚠️ {oc_desc}</div>
+                        <div class="ocorr-info">Status: <span>{oc_status}</span></div>
+                        <div class="ocorr-info">Responsável: <span>{oc_resp}</span></div>
+                        <div class="ocorr-info">Data: <span>{oc_data}</span></div>
+                    </div>
+                """,
+                    unsafe_allow_html=True,
+                )
+        else:
+            st.success(
+                "✅ Nenhuma ocorrência ou incidente registado no momento!"
+            )
