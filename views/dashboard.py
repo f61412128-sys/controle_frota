@@ -9,7 +9,8 @@ def render_cards_veiculos_estilizados(df_veiculos):
         st.info("Nenhum veículo registado nesta secção.")
         return
 
-    st.markdown("""
+    st.markdown(
+        """
         <style>
         .veiculo-card {
             background-color: #111827;
@@ -56,38 +57,47 @@ def render_cards_veiculos_estilizados(df_veiculos):
             font-weight: 500;
         }
         </style>
-    """, unsafe_allow_html=True)
+    """,
+        unsafe_allow_html=True,
+    )
 
     for _, row in df_veiculos.iterrows():
-        placa = str(row.get('placa', 'N/A'))
-        modelo = str(row.get('modelo', 'N/A'))
-        tipo = str(row.get('tipo_propriedade', row.get('tipo', 'N/A')))
-        
-        status_disp = row.get('status_disponibilidade', 'Disponível')
-        ultimo_resp = row.get('ultimo_responsavel', 'Sem registo')
-        tipo_mov = row.get('ultimo_tipo_movimento', '')
-        data_hora_chk = row.get('ultimo_data_hora', 'N/A')
-        endereco_chk = row.get('ultimo_endereco', 'Não informado')
-        
-        if status_disp == 'Disponível':
-            badge_html = '<span class="badge-disponivel">🟢 Disponível </span>'
+        placa = str(row.get("placa", "N/A"))
+        modelo = str(row.get("modelo", "N/A"))
+        tipo = str(row.get("tipo_propriedade", row.get("tipo", "N/A")))
+        consumo_medio = row.get("consumo_medio", "Não calculado")
+
+        status_disp = row.get("status_disponibilidade", "Disponível")
+        ultimo_resp = row.get("ultimo_responsavel", "Sem registo")
+        tipo_mov = row.get("ultimo_tipo_movimento", "")
+        data_hora_chk = row.get("ultimo_data_hora", "N/A")
+        endereco_chk = row.get("ultimo_endereco", "Não informado")
+
+        if status_disp == "Disponível":
+            badge_html = (
+                '<span class="badge-disponivel">🟢 Disponível </span>'
+            )
         else:
             badge_html = '<span class="badge-indisponivel">🔴 Em Uso / Indisponível</span>'
 
         mov_text = f" ({tipo_mov})" if tipo_mov else ""
 
-        st.markdown(f"""
+        st.markdown(
+            f"""
             <div class="veiculo-card">
                 <div class="veiculo-header">
                     <span class="veiculo-placa">🚗 {placa} - {modelo}</span>
                     {badge_html}
                 </div>
                 <div class="veiculo-info">Tipo: <span>{tipo}</span></div>
+                <div class="veiculo-info">Consumo Médio: <span>{consumo_medio}</span></div>
                 <div class="veiculo-info">Último Registo{mov_text}: <span>{ultimo_resp}</span></div>
                 <div class="veiculo-info">Data e Hora: <span>{data_hora_chk}</span></div>
                 <div class="veiculo-info">Endereço: <span>{endereco_chk}</span></div>
             </div>
-        """, unsafe_allow_html=True)
+        """,
+            unsafe_allow_html=True,
+        )
 
 
 def ler_tabela_direta(query):
@@ -112,17 +122,46 @@ def ler_tabela_direta(query):
 def render_dashboard(contar_registros_fn=None):
     st.title("📊 Painel Geral da Frota")
 
-    df_tables = ler_tabela_direta("SELECT table_name FROM information_schema.tables WHERE table_schema='public';")
-    tabelas_existentes = df_tables['table_name'].tolist() if not df_tables.empty else []
+    df_tables = ler_tabela_direta(
+        "SELECT table_name FROM information_schema.tables WHERE table_schema='public';"
+    )
+    tabelas_existentes = (
+        df_tables["table_name"].tolist() if not df_tables.empty else []
+    )
 
-    df_veiculos = ler_tabela_direta("SELECT * FROM veiculos") if 'veiculos' in tabelas_existentes else pd.DataFrame()
-    df_manutencoes = ler_tabela_direta("SELECT * FROM manutencoes") if 'manutencoes' in tabelas_existentes else pd.DataFrame()
-    df_motoristas = ler_tabela_direta("SELECT * FROM motoristas") if 'motoristas' in tabelas_existentes else pd.DataFrame()
-    df_usuarios = ler_tabela_direta("SELECT * FROM usuarios") if 'usuarios' in tabelas_existentes else pd.DataFrame()
+    df_veiculos = (
+        ler_tabela_direta("SELECT * FROM veiculos")
+        if "veiculos" in tabelas_existentes
+        else pd.DataFrame()
+    )
+    df_manutencoes = (
+        ler_tabela_direta("SELECT * FROM manutencoes")
+        if "manutencoes" in tabelas_existentes
+        else pd.DataFrame()
+    )
+    df_motoristas = (
+        ler_tabela_direta("SELECT * FROM motoristas")
+        if "motoristas" in tabelas_existentes
+        else pd.DataFrame()
+    )
+    df_usuarios = (
+        ler_tabela_direta("SELECT * FROM usuarios")
+        if "usuarios" in tabelas_existentes
+        else pd.DataFrame()
+    )
+
+    # Carregar dados de abastecimentos para calcular consumo
+    df_abastecimentos = pd.DataFrame()
+    for t_abast in ["abastecimentos", "abastecimento", "combustivel"]:
+        if t_abast in tabelas_existentes:
+            df_temp = ler_tabela_direta(f"SELECT * FROM {t_abast}")
+            if not df_temp.empty:
+                df_abastecimentos = df_temp
+                break
 
     df_checklists = pd.DataFrame()
-    
-    for t in ['checklists', 'checklist', 'historico_checklists', 'inspecoes']:
+
+    for t in ["checklists", "checklist", "historico_checklists", "inspecoes"]:
         if t in tabelas_existentes:
             df_temp = ler_tabela_direta(f"SELECT * FROM {t}")
             if not df_temp.empty:
@@ -132,98 +171,234 @@ def render_dashboard(contar_registros_fn=None):
     if df_checklists.empty:
         for t in tabelas_existentes:
             df_temp = ler_tabela_direta(f"SELECT * FROM {t}")
-            if not df_temp.empty and any(k in t.lower() for k in ['check', 'insp', 'vist']):
+            if not df_temp.empty and any(
+                k in t.lower() for k in ["check", "insp", "vist"]
+            ):
                 df_checklists = df_temp
                 break
 
-    # Cruzamento inteligente de checklists (Entrada/Saída e Responsável/Admin)
+    # Cruzamento de checklists e cálculo de consumo por veículo
     if not df_veiculos.empty:
         status_list = []
         resp_list = []
         tipo_mov_list = []
         data_hora_list = []
         endereco_list = []
+        consumo_list = []
 
         for _, v_row in df_veiculos.iterrows():
-            v_id = v_row.get('id')
-            
+            v_id = v_row.get("id")
+            v_placa = str(v_row.get("placa", "")).strip().upper()
+
+            # Cálculo de consumo baseado nos abastecimentos
+            consumo_str = "Não calculado"
+            if not df_abastecimentos.empty:
+                # Tenta filtrar por veiculo_id ou placa
+                mask_abast = pd.Series(False, index=df_abastecimentos.index)
+                if "veiculo_id" in df_abastecimentos.columns and v_id is not None:
+                    mask_abast |= df_abastecimentos["veiculo_id"] == v_id
+                if "placa" in df_abastecimentos.columns and v_placa:
+                    mask_abast |= (
+                        df_abastecimentos["placa"]
+                        .astype(str)
+                        .str.upper()
+                        .str.strip()
+                        == v_placa
+                    )
+
+                df_v_abast = df_abastecimentos[mask_abast]
+                if not df_v_abast.empty:
+                    # Procura colunas de KM/odômetro e litros
+                    col_km = next(
+                        (
+                            c
+                            for c in [
+                                "km",
+                                "quilometragem",
+                                "odometro",
+                                "km_atual",
+                            ]
+                            if c in df_v_abast.columns
+                        ),
+                        None,
+                    )
+                    col_litros = next(
+                        (
+                            c
+                            for c in [
+                                "litros",
+                                "quantidade",
+                                "qtd_litros",
+                                "volume",
+                            ]
+                            if c in df_v_abast.columns
+                        ),
+                        None,
+                    )
+
+                    if col_km and col_litros:
+                        try:
+                            df_v_abast = df_v_abast.sort_values(by=col_km)
+                            km_vals = pd.to_numeric(
+                                df_v_abast[col_km], errors="coerce"
+                            ).dropna()
+                            litros_vals = pd.to_numeric(
+                                df_v_abast[col_litros], errors="coerce"
+                            ).dropna()
+                            if len(km_vals) >= 2 and litros_vals.sum() > 0:
+                                diff_km = km_vals.iloc[-1] - km_vals.iloc[0]
+                                total_l = litros_vals.sum()
+                                if diff_km > 0:
+                                    media = diff_km / total_l
+                                    consumo_str = f"{media:.2f} km/L"
+                        except Exception:
+                            pass
+
+                    # Caso tenha coluna direta de consumo médio ou média calculada
+                    if consumo_str == "Não calculado":
+                        for c_med in [
+                            "consumo_medio",
+                            "media_km_l",
+                            "consumo",
+                        ]:
+                            if c_med in df_v_abast.columns:
+                                val_m = df_v_abast[c_med].dropna()
+                                if not val_m.empty:
+                                    consumo_str = (
+                                        f"{float(val_m.iloc[-1]):.2f} km/L"
+                                    )
+                                    break
+
+            consumo_list.append(consumo_str)
+
             df_chk_veiculo = pd.DataFrame()
-            if not df_checklists.empty and 'veiculo_id' in df_checklists.columns and v_id is not None:
-                mask = df_checklists['veiculo_id'] == v_id
+            if (
+                not df_checklists.empty
+                and "veiculo_id" in df_checklists.columns
+                and v_id is not None
+            ):
+                mask = df_checklists["veiculo_id"] == v_id
                 df_chk_veiculo = df_checklists[mask]
 
             if not df_chk_veiculo.empty:
                 col_data = None
-                for c in ['data_hora', 'created_at', 'data', 'data_checklist', 'timestamp']:
+                for c in [
+                    "data_hora",
+                    "created_at",
+                    "data",
+                    "data_checklist",
+                    "timestamp",
+                ]:
                     if c in df_chk_veiculo.columns:
                         col_data = c
                         break
-                
+
                 if col_data:
                     try:
-                        df_chk_veiculo = df_chk_veiculo.sort_values(by=col_data, ascending=False)
+                        df_chk_veiculo = df_chk_veiculo.sort_values(
+                            by=col_data, ascending=False
+                        )
                     except Exception:
                         pass
 
                 ult_chk = df_chk_veiculo.iloc[0]
 
-                # Data e Hora formatada
                 raw_data = ult_chk.get(col_data) if col_data else None
                 if isinstance(raw_data, datetime.datetime):
                     data_formatada = raw_data.strftime("%d/%m/%Y %H:%M")
-                elif raw_data and str(raw_data).strip() not in ["", "None", "NaT"]:
+                elif raw_data and str(raw_data).strip() not in [
+                    "",
+                    "None",
+                    "NaT",
+                ]:
                     data_str = str(raw_data).strip()
-                    data_formatada = data_str[:16].replace("T", " ") if len(data_str) >= 16 else data_str
+                    data_formatada = (
+                        data_str[:16].replace("T", " ")
+                        if len(data_str) >= 16
+                        else data_str
+                    )
                 else:
                     data_formatada = "N/A"
 
-                # Endereço
                 endereco_chk = "Não informado"
-                for col_loc in ['localizacao', 'endereco', 'gps']:
+                for col_loc in ["localizacao", "endereco", "gps"]:
                     if col_loc in ult_chk and pd.notna(ult_chk[col_loc]):
                         endereco_chk = str(ult_chk[col_loc])
                         break
 
-                # Tenta descobrir o responsável
                 resp = "Administrador / Sistema"
-                for col_resp in ['responsavel', 'usuario_responsavel', 'nome_responsavel']:
+                for col_resp in [
+                    "responsavel",
+                    "usuario_responsavel",
+                    "nome_responsavel",
+                ]:
                     if col_resp in ult_chk and pd.notna(ult_chk[col_resp]):
                         resp = str(ult_chk[col_resp])
                         break
-                
+
                 if resp == "Administrador / Sistema" or resp.isdigit():
-                    for id_col in ['usuario_id', 'admin_id', 'criado_por_id']:
-                        if id_col in ult_chk and pd.notna(ult_chk[id_col]) and not df_usuarios.empty and 'id' in df_usuarios.columns:
-                            u_match = df_usuarios[df_usuarios['id'] == ult_chk[id_col]]
+                    for id_col in ["usuario_id", "admin_id", "criado_por_id"]:
+                        if (
+                            id_col in ult_chk
+                            and pd.notna(ult_chk[id_col])
+                            and not df_usuarios.empty
+                            and "id" in df_usuarios.columns
+                        ):
+                            u_match = df_usuarios[
+                                df_usuarios["id"] == ult_chk[id_col]
+                            ]
                             if not u_match.empty:
-                                resp = str(u_match.iloc[0].get('nome', u_match.iloc[0].get('usuario', 'Admin')))
+                                resp = str(
+                                    u_match.iloc[0].get(
+                                        "nome",
+                                        u_match.iloc[0].get("usuario", "Admin"),
+                                    )
+                                )
                                 break
 
                 if resp == "Administrador / Sistema" or resp.isdigit():
-                    motorista_id = ult_chk.get('motorista_id')
-                    if motorista_id is not None and not df_motoristas.empty and 'id' in df_motoristas.columns:
-                        m_match = df_motoristas[df_motoristas['id'] == motorista_id]
+                    motorista_id = ult_chk.get("motorista_id")
+                    if (
+                        motorista_id is not None
+                        and not df_motoristas.empty
+                        and "id" in df_motoristas.columns
+                    ):
+                        m_match = df_motoristas[
+                            df_motoristas["id"] == motorista_id
+                        ]
                         if not m_match.empty:
-                            resp = str(m_match.iloc[0].get('nome', 'Motorista'))
+                            resp = str(m_match.iloc[0].get("nome", "Motorista"))
 
-                # Detetar se é Saída ou Entrada
                 tipo_mov = ""
-                for col_tipo in ['tipo_operacao', 'tipo_movimento', 'operacao', 'movimento', 'fluxo']:
+                for col_tipo in [
+                    "tipo_operacao",
+                    "tipo_movimento",
+                    "operacao",
+                    "movimento",
+                    "fluxo",
+                ]:
                     if col_tipo in ult_chk and pd.notna(ult_chk[col_tipo]):
                         tipo_mov = str(ult_chk[col_tipo])
                         break
 
                 tipo_mov_lower = tipo_mov.lower()
-                if any(k in tipo_mov_lower for k in ['saida', 'retirada', 'saída', 'uso']):
+                if any(
+                    k in tipo_mov_lower for k in ["saida", "retirada", "uso"]
+                ):
                     status_disp = "Indisponível"
-                elif any(k in tipo_mov_lower for k in ['entrada', 'devolucao', 'devolução', 'retorno', 'chegada']):
+                elif any(
+                    k in tipo_mov_lower
+                    for k in ["entrada", "devolucao", "retorno", "chegada"]
+                ):
                     status_disp = "Disponível"
                 else:
                     status_disp = "Disponível"
 
                 status_list.append(status_disp)
                 resp_list.append(resp)
-                tipo_mov_list.append(tipo_mov if tipo_mov else "Registo Geral")
+                tipo_mov_list.append(
+                    tipo_mov if tipo_mov else "Registo Geral"
+                )
                 data_hora_list.append(data_formatada)
                 endereco_list.append(endereco_chk)
             else:
@@ -233,40 +408,41 @@ def render_dashboard(contar_registros_fn=None):
                 data_hora_list.append("N/A")
                 endereco_list.append("Não informado")
 
-        df_veiculos['status_disponibilidade'] = status_list
-        df_veiculos['ultimo_responsavel'] = resp_list
-        df_veiculos['ultimo_tipo_movimento'] = tipo_mov_list
-        df_veiculos['ultimo_data_hora'] = data_hora_list
-        df_veiculos['ultimo_endereco'] = endereco_list
+        df_veiculos["status_disponibilidade"] = status_list
+        df_veiculos["ultimo_responsavel"] = resp_list
+        df_veiculos["ultimo_tipo_movimento"] = tipo_mov_list
+        df_veiculos["ultimo_data_hora"] = data_hora_list
+        df_veiculos["ultimo_endereco"] = endereco_list
+        df_veiculos["consumo_medio"] = consumo_list
     else:
-        df_veiculos['status_disponibilidade'] = "Disponível"
-        df_veiculos['ultimo_responsavel'] = "N/A"
-        df_veiculos['ultimo_tipo_movimento'] = ""
-        df_veiculos['ultimo_data_hora'] = "N/A"
-        df_veiculos['ultimo_endereco'] = "Não informado"
+        df_veiculos["status_disponibilidade"] = "Disponível"
+        df_veiculos["ultimo_responsavel"] = "N/A"
+        df_veiculos["ultimo_tipo_movimento"] = ""
+        df_veiculos["ultimo_data_hora"] = "N/A"
+        df_veiculos["ultimo_endereco"] = "Não informado"
+        df_veiculos["consumo_medio"] = "Não calculado"
 
-    # Cálculo do Custo de Manutenções
     custo_total_manut = 0.0
     if not df_manutencoes.empty:
-        for col_val in ['valor', 'custo', 'preco', 'valor_total']:
+        for col_val in ["valor", "custo", "preco", "valor_total"]:
             if col_val in df_manutencoes.columns:
                 try:
                     valores_limpos = pd.to_numeric(
-                        df_manutencoes[col_val].astype(str)
-                        .str.replace('R$', '', regex=True)
-                        .str.replace('.', '', regex=False)
-                        .str.replace(',', '.', regex=False),
-                        errors='coerce'
+                        df_manutencoes[col_val]
+                        .astype(str)
+                        .str.replace("R$", "", regex=True)
+                        .str.replace(".", "", regex=False)
+                        .str.replace(",", ".", regex=False),
+                        errors="coerce",
                     )
                     custo_total_manut = float(valores_limpos.sum())
                     break
                 except Exception:
                     pass
 
-    # Cálculo dinâmico de Contratos a Vencer / Vencidos
     total_venc_contratos = 0
     df_contratos = pd.DataFrame()
-    for t_c in ['contratos', 'locacoes', 'gestao_contratos']:
+    for t_c in ["contratos", "locacoes", "gestao_contratos"]:
         if t_c in tabelas_existentes:
             df_temp = ler_tabela_direta(f"SELECT * FROM {t_c}")
             if not df_temp.empty:
@@ -275,30 +451,51 @@ def render_dashboard(contar_registros_fn=None):
 
     if not df_contratos.empty:
         col_venc = None
-        for c in ['data_fim', 'vencimento', 'termino_contrato', 'data_termino', 'vencimento_contrato']:
+        for c in [
+            "data_fim",
+            "vencimento",
+            "termino_contrato",
+            "data_termino",
+            "vencimento_contrato",
+        ]:
             if c in df_contratos.columns:
                 col_venc = c
                 break
         if col_venc:
             try:
                 hoje = pd.Timestamp.now().normalize()
-                datas_venc = pd.to_datetime(df_contratos[col_venc], errors='coerce')
+                datas_venc = pd.to_datetime(
+                    df_contratos[col_venc], errors="coerce"
+                )
                 limite = hoje + pd.Timedelta(days=30)
-                total_venc_contratos = int(((datas_venc >= hoje) & (datas_venc <= limite)).sum() + (datas_venc < hoje).sum())
+                total_venc_contratos = int(
+                    ((datas_venc >= hoje) & (datas_venc <= limite)).sum()
+                    + (datas_venc < hoje).sum()
+                )
             except Exception:
                 pass
     elif not df_veiculos.empty:
         col_venc_v = None
-        for c in ['vencimento_contrato', 'data_fim_contrato', 'fim_contrato', 'vencimento']:
+        for c in [
+            "vencimento_contrato",
+            "data_fim_contrato",
+            "fim_contrato",
+            "vencimento",
+        ]:
             if c in df_veiculos.columns:
                 col_venc_v = c
                 break
         if col_venc_v:
             try:
                 hoje = pd.Timestamp.now().normalize()
-                datas_venc = pd.to_datetime(df_veiculos[col_venc_v], errors='coerce')
+                datas_venc = pd.to_datetime(
+                    df_veiculos[col_venc_v], errors="coerce"
+                )
                 limite = hoje + pd.Timedelta(days=30)
-                total_venc_contratos = int(((datas_venc >= hoje) & (datas_venc <= limite)).sum() + (datas_venc < hoje).sum())
+                total_venc_contratos = int(
+                    ((datas_venc >= hoje) & (datas_venc <= limite)).sum()
+                    + (datas_venc < hoje).sum()
+                )
             except Exception:
                 pass
 
@@ -307,13 +504,18 @@ def render_dashboard(contar_registros_fn=None):
 
     if not df_veiculos.empty:
         col_alvo = None
-        for c in ['tipo_propriedade', 'tipo', 'posse', 'categoria']:
+        for c in ["tipo_propriedade", "tipo", "posse", "categoria"]:
             if c in df_veiculos.columns:
                 col_alvo = c
                 break
 
         if col_alvo:
-            mask_alug = df_veiculos[col_alvo].astype(str).str.lower().str.contains("alugado|terceirizado|locado|terceiro", na=False)
+            mask_alug = (
+                df_veiculos[col_alvo]
+                .astype(str)
+                .str.lower()
+                .str.contains("alugado|terceirizado|locado|terceiro", na=False)
+            )
             df_alugados = df_veiculos[mask_alug].copy()
             df_proprios = df_veiculos[~mask_alug].copy()
         else:
@@ -347,7 +549,9 @@ def render_dashboard(contar_registros_fn=None):
     ])
 
     with tab_contratos:
-        sub_alug, sub_prop = st.tabs(["📋 Alugados / Terceirizados", "🏢 Próprios"])
+        sub_alug, sub_prop = st.tabs(
+            ["📋 Alugados / Terceirizados", "🏢 Próprios"]
+        )
         with sub_alug:
             render_cards_veiculos_estilizados(df_alugados)
         with sub_prop:
@@ -356,7 +560,13 @@ def render_dashboard(contar_registros_fn=None):
     with tab_rodizio:
         st.markdown("##### Consulta de Rodízio (SP)")
         hoje_idx = datetime.datetime.now().weekday()
-        regras = {0: "Placas 1 e 2", 1: "Placas 3 e 4", 2: "Placas 5 e 6", 3: "Placas 7 e 8", 4: "Placas 9 e 0"}
+        regras = {
+            0: "Placas 1 e 2",
+            1: "Placas 3 e 4",
+            2: "Placas 5 e 6",
+            3: "Placas 7 e 8",
+            4: "Placas 9 e 0",
+        }
         if hoje_idx < 5:
             st.warning(f"🚫 Restrição hoje: {regras.get(hoje_idx)}")
         else:
@@ -364,7 +574,9 @@ def render_dashboard(contar_registros_fn=None):
 
     with tab_manut:
         if not df_manutencoes.empty:
-            st.dataframe(df_manutencoes, use_container_width=True, hide_index=True)
+            st.dataframe(
+                df_manutencoes, use_container_width=True, hide_index=True
+            )
         else:
             st.info("Sem manutenções recentes registadas.")
 
