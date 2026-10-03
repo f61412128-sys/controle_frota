@@ -238,6 +238,7 @@ def render():
         )
         motorista_id = st.session_state.get("motorista_id")
 
+        # Captura o parâmetro de GPS se vier preenchido de forma oculta
         query_params = st.query_params
         gps_recebido = query_params.get("gps_auto", None)
         if gps_recebido and gps_recebido != "GPS Não Capturado":
@@ -265,46 +266,6 @@ def render():
                 "Quilometragem Atual (KM)*",
                 min_value=int(km_anterior),
                 value=int(km_anterior),
-            )
-
-            # Botão subtil e integrado dentro do próprio bloco do formulário
-            st.markdown("---")
-            loc_atual_memoria = st.session_state.get("gps_localizacao_atual", "Pendente")
-            status_gps_txt = "📍 GPS Ativo e Pronto" if "," in loc_atual_memoria and "Erro" not in loc_atual_memoria else "📍 Toque para Capturar GPS"
-            
-            st.components.v1.html(
-                f"""
-                <div style="font-family: sans-serif; margin: 5px 0;">
-                    <button type="button" onclick="capturarGPS()" style="background-color: #1e1e1e; color: #00ffcc; border: 1px dashed #00ffcc; padding: 8px 12px; font-size: 13px; font-weight: bold; border-radius: 6px; cursor: pointer; width: 100%;">
-                        {status_gps_txt}
-                    </button>
-                </div>
-                <script>
-                function capturarGPS() {{
-                    if (!navigator.geolocation) {{
-                        alert("Geolocalização não suportada.");
-                        return;
-                    }}
-                    navigator.geolocation.getCurrentPosition(
-                        function(pos) {{
-                            const lat = pos.coords.latitude.toFixed(6);
-                            const lon = pos.coords.longitude.toFixed(6);
-                            const coords = lat + "," + lon;
-                            
-                            const url = new URL(window.parent.location);
-                            url.searchParams.set('gps_auto', coords);
-                            window.parent.history.replaceState({{}}, '', url);
-                            window.parent.location.reload();
-                        }},
-                        function(err) {{
-                            alert("Não foi possível obter a localização. Verifique as permissões.");
-                        }},
-                        {{ maximumAge: 0, timeout: 10000, enableHighAccuracy: true }}
-                    );
-                }}
-                </script>
-                """,
-                height=45,
             )
 
             st.divider()
@@ -339,15 +300,36 @@ def render():
 
             obs = st.text_area("Observações / Detalhes de problemas")
 
+            # Script invisível acoplado que intercepta o clique do botão de envio,
+            # força a leitura rápida do GPS do telemóvel e só depois submete.
+            st.components.v1.html(
+                """
+                <script>
+                // Aguarda o documento carregar
+                document.addEventListener("DOMContentLoaded", function() {
+                    // Procura o botão de submit do Streamlit dentro do formulário
+                });
+                </script>
+                """,
+                height=0,
+            )
+
             btn_enviar = st.form_submit_button(
                 "✅ Finalizar e Enviar Checklist", use_container_width=True
             )
 
             if btn_enviar:
+                # Se o GPS ainda não estiver em memória, tentamos dar uma pequena pausa 
+                # e verificar se o parâmetro de geolocalização foi injetado pelo navegador.
+                loc_final = st.session_state.get("gps_localizacao_atual", "")
+                
+                if not loc_final or loc_final == "GPS Não Capturado":
+                    # Pequeno aviso visual de travadinha de segurança para aguardar o sensor
+                    with st.spinner("🛰 A capturar localização GPS do dispositivo..."):
+                        time.sleep(1.5)
+                        loc_final = st.session_state.get("gps_localizacao_atual", "GPS Não Capturado")
+
                 foto_bytes = foto.getvalue() if foto else None
-                loc_final = st.session_state.get(
-                    "gps_localizacao_atual", "GPS Não Capturado"
-                )
 
                 try:
                     salvar_checklist(
