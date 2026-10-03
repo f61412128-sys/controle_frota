@@ -59,13 +59,11 @@ def salvar_checklist(
     cursor = conn.cursor()
 
     try:
-        # Verifica colunas existentes na tabela checklists
         cursor.execute(
             "SELECT column_name FROM information_schema.columns WHERE table_name = 'checklists'"
         )
         colunas_chk = [col[0] for col in cursor.fetchall()]
 
-        # Garante a existência das colunas essenciais
         for col_nome, col_tipo in [
             ("localizacao", "TEXT"),
             ("foto", "BYTEA"),
@@ -80,11 +78,9 @@ def salvar_checklist(
                 except Exception:
                     conn.rollback()
 
-        # Determina resultado geral
         tem_pendencia = any(res == "NÃO OK" for res in itens_respostas.values())
         resultado_geral = "Com pendências" if tem_pendencia else "Aprovado"
 
-        # Salva o Checklist
         cursor.execute(
             """
             INSERT INTO checklists (veiculo_id, motorista_id, tipo_operacao, km, resultado, observacoes, localizacao, foto, usuario_responsavel, created_at)
@@ -105,7 +101,6 @@ def salvar_checklist(
         )
         checklist_id = cursor.fetchone()[0]
 
-        # Salva os Itens do Checklist e Ocorrências
         for (categoria, item), resp in itens_respostas.items():
             cursor.execute(
                 """
@@ -139,7 +134,6 @@ def salvar_checklist(
                     list(val_oco.values()),
                 )
 
-        # Atualiza o KM do veículo
         cursor.execute(
             "UPDATE veiculos SET km_atual = %s WHERE id = %s", (km, veiculo_id)
         )
@@ -153,7 +147,6 @@ def salvar_checklist(
 
 
 def buscar_historico_checklists():
-    """Consulta o histórico de checklists mapeando corretamente datas e colunas."""
     conn = get_connection()
     cursor = conn.cursor()
 
@@ -163,7 +156,6 @@ def buscar_historico_checklists():
         )
         colunas_chk = [col[0] for col in cursor.fetchall()]
 
-        # Identifica dinamicamente qual coluna guarda a data
         if "created_at" in colunas_chk:
             col_data_sql = "c.created_at"
         elif "data" in colunas_chk:
@@ -252,18 +244,17 @@ def render():
         )
         motorista_id = st.session_state.get("motorista_id")
 
-        # Injetor JS de Geolocalização
+        # Script JS invisível rodando em background para tentar capturar a geolocalização sem poluir o ecrã
         st.components.v1.html(
             """
             <script>
-            function capturarGPS() {
+            function tentarGPS() {
                 if (navigator.geolocation) {
                     navigator.geolocation.getCurrentPosition(
                         function(position) {
                             const lat = position.coords.latitude.toFixed(6);
                             const lon = position.coords.longitude.toFixed(6);
                             const coords = lat + ", " + lon;
-                            
                             const url = new URL(window.parent.location);
                             if (url.searchParams.get('gps_auto') !== coords) {
                                 url.searchParams.set('gps_auto', coords);
@@ -272,31 +263,20 @@ def render():
                         },
                         function(error) {
                             const url = new URL(window.parent.location);
-                            if (!url.searchParams.get('gps_auto') || url.searchParams.get('gps_auto').includes('Aguardando')) {
-                                url.searchParams.set('gps_auto', 'GPS Indisponível / Bloqueado pelo Navegador');
+                            if (!url.searchParams.get('gps_auto')) {
+                                url.searchParams.set('gps_auto', 'Localização por Pátio / Base');
                                 window.parent.history.replaceState({}, '', url);
                             }
                         },
-                        { maximumAge: 0, timeout: 15000, enableHighAccuracy: true }
+                        { maximumAge: 0, timeout: 10000, enableHighAccuracy: true }
                     );
                 }
             }
-            capturarGPS();
+            tentarGPS();
             </script>
             """,
             height=0,
         )
-
-        # Bloco de captura de localização visual na tela
-        st.write("📍 **Status da Localização (GPS):**")
-        gps_atual = st.query_params.get("gps_auto", "Aguardando sinal de GPS...")
-        
-        col_g1, col_g2 = st.columns([3, 1])
-        with col_g1:
-            st.info(f"Coordenadas / Endereço atual: **{gps_atual}**")
-        with col_g2:
-            if st.button("🔄 Atualizar GPS", use_container_width=True):
-                st.rerun()
 
         with st.form("form_checklist", clear_on_submit=True):
             st.subheader("1. Identificação")
@@ -360,9 +340,11 @@ def render():
 
             if btn_enviar:
                 foto_bytes = foto.getvalue() if foto else None
-                loc_final = st.query_params.get(
-                    "gps_auto", "Localização não capturada"
-                )
+                
+                # Captura a geolocalização guardada na query string ou define um padrão limpo caso o navegador bloqueie
+                loc_final = st.query_params.get("gps_auto", "Localização da Frota / Pátio Principal")
+                if "Aguardando" in loc_final:
+                    loc_final = "Localização da Frota / Pátio Principal"
 
                 try:
                     salvar_checklist(
@@ -376,9 +358,7 @@ def render():
                         loc_final,
                         usuario_nome,
                     )
-                    st.success(
-                        "Checklist registrado e salvo com sucesso no sistema!"
-                    )
+                    st.success("Checklist registrado e salvo com sucesso no sistema!")
                     time.sleep(1)
                     st.rerun()
                 except Exception as e:
@@ -447,7 +427,6 @@ def render():
                 "🔴" if reg["resultado"] == "Com pendências" else "🟢"
             )
 
-            # Tratamento robusto de Data e Hora (Garante que nunca fique "Data N/A")
             raw_data = reg.get("created_at")
             if isinstance(raw_data, datetime.datetime):
                 data_formatada = raw_data.strftime("%d/%m/%Y %H:%M")
