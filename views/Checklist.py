@@ -1,3 +1,4 @@
+import datetime
 import json
 import time
 import urllib.request
@@ -15,6 +16,7 @@ def obter_endereco_reverso(lat_lon_str):
             or "," not in lat_lon_str
             or "Negado" in lat_lon_str
             or "Aguardando" in lat_lon_str
+            or "Indisponível" in lat_lon_str
         ):
             return lat_lon_str
 
@@ -51,56 +53,42 @@ def salvar_checklist(
     localizacao,
     usuario_responsavel,
 ):
-    # Converte as coordenadas em endereço legível
     localizacao_amigavel = obter_endereco_reverso(localizacao)
 
     conn = get_connection()
     cursor = conn.cursor()
 
     try:
-        # Garante compatibilidade e criação de colunas caso ainda não existam no PostgreSQL
+        # Verifica colunas existentes na tabela checklists
         cursor.execute(
             "SELECT column_name FROM information_schema.columns WHERE table_name = 'checklists'"
         )
         colunas_chk = [col[0] for col in cursor.fetchall()]
-        
-        if "localizacao" not in colunas_chk:
-            try:
-                cursor.execute("ALTER TABLE checklists ADD COLUMN localizacao TEXT")
-                conn.commit()
-            except Exception:
-                conn.rollback()
 
-        if "foto" not in colunas_chk:
-            try:
-                cursor.execute("ALTER TABLE checklists ADD COLUMN foto BYTEA")
-                conn.commit()
-            except Exception:
-                conn.rollback()
+        # Garante a existência das colunas essenciais
+        for col_nome, col_tipo in [
+            ("localizacao", "TEXT"),
+            ("foto", "BYTEA"),
+            ("tipo_operacao", "TEXT"),
+            ("usuario_responsavel", "TEXT"),
+            ("created_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
+        ]:
+            if col_nome not in colunas_chk:
+                try:
+                    cursor.execute(f"ALTER TABLE checklists ADD COLUMN {col_nome} {col_tipo}")
+                    conn.commit()
+                except Exception:
+                    conn.rollback()
 
-        if "tipo_operacao" not in colunas_chk:
-            try:
-                cursor.execute("ALTER TABLE checklists ADD COLUMN tipo_operacao TEXT")
-                conn.commit()
-            except Exception:
-                conn.rollback()
-
-        if "usuario_responsavel" not in colunas_chk:
-            try:
-                cursor.execute("ALTER TABLE checklists ADD COLUMN usuario_responsavel TEXT")
-                conn.commit()
-            except Exception:
-                conn.rollback()
-
-        # 1. Determina resultado geral
+        # Determina resultado geral
         tem_pendencia = any(res == "NÃO OK" for res in itens_respostas.values())
         resultado_geral = "Com pendências" if tem_pendencia else "Aprovado"
 
-        # 2. Salva o Checklist e obtém o ID gerado
+        # Salva o Checklist
         cursor.execute(
             """
-            INSERT INTO checklists (veiculo_id, motorista_id, tipo_operacao, km, resultado, observacoes, localizacao, foto, usuario_responsavel)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            INSERT INTO checklists (veiculo_id, motorista_id, tipo_operacao, km, resultado, observacoes, localizacao, foto, usuario_responsavel, created_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
             RETURNING id
             """,
             (
@@ -117,7 +105,7 @@ def salvar_checklist(
         )
         checklist_id = cursor.fetchone()[0]
 
-        # 3. Salva os Itens e abre Ocorrências automáticas se houver falha
+        # Salva os Itens do Checklist e Ocorrências
         for (categoria, item), resp in itens_respostas.items():
             cursor.execute(
                 """
@@ -138,10 +126,7 @@ def salvar_checklist(
                     "motorista_id": motorista_id if motorista_id else 1,
                     "checklist_id": checklist_id,
                     "item": item,
-                    "descricao": (
-                        f"Avaria apontada no checklist (Local: {localizacao_amigavel}):"
-                        f" {item}"
-                    ),
+                    "descricao": f"Avaria apontada no checklist (Local: {localizacao_amigavel}): {item}",
                     "status": "Aberto",
                 }
                 if "gravidade" in colunas_oco:
@@ -154,7 +139,7 @@ def salvar_checklist(
                     list(val_oco.values()),
                 )
 
-        # 4. Atualiza o KM do veículo
+        # Atualiza o KM do veículo
         cursor.execute(
             "UPDATE veiculos SET km_atual = %s WHERE id = %s", (km, veiculo_id)
         )
@@ -168,7 +153,7 @@ def salvar_checklist(
 
 
 def buscar_historico_checklists():
-    """Consulta o histórico de checklists ordenando e tratando data/hora corretamente."""
+    """Consulta o histórico de checklists mapeando corretamente datas e colunas."""
     conn = get_connection()
     cursor = conn.cursor()
 
@@ -178,29 +163,19 @@ def buscar_historico_checklists():
         )
         colunas_chk = [col[0] for col in cursor.fetchall()]
 
-        col_data_sql = "''"
+        # Identifica dinamicamente qual coluna guarda a data
         if "created_at" in colunas_chk:
             col_data_sql = "c.created_at"
         elif "data" in colunas_chk:
             col_data_sql = "c.data"
+        elif "data_criacao" in colunas_chk:
+            col_data_sql = "c.data_criacao"
+        else:
+            col_data_sql = "NULL"
 
-        col_loc_sql = (
-            "c.localizacao"
-            if "localizacao" in colunas_chk
-            else "'' AS localizacao"
-        )
-        
-        col_op_sql = (
-            "c.tipo_operacao"
-            if "tipo_operacao" in colunas_chk
-            else "'Saída' AS tipo_operacao"
-        )
-        
-        col_resp_sql = (
-            "c.usuario_responsavel"
-            if "usuario_responsavel" in colunas_chk
-            else "NULL AS usuario_responsavel"
-        )
+        col_loc_sql = "c.localizacao" if "localizacao" in colunas_chk else "'' AS localizacao"
+        col_op_sql = "c.tipo_operacao" if "tipo_operacao" in colunas_chk else "'Saída (Retirada do Veículo)' AS tipo_operacao"
+        col_resp_sql = "c.usuario_responsavel" if "usuario_responsavel" in colunas_chk else "NULL AS usuario_responsavel"
 
         query = f"""
             SELECT 
@@ -214,7 +189,7 @@ def buscar_historico_checklists():
                 {col_resp_sql},
                 v.placa,
                 v.modelo,
-                COALESCE(c.usuario_responsavel, m.nome, u.nome, 'Não informado') AS motorista_nome
+                COALESCE(c.usuario_responsavel, m.nome, u.nome, 'Administrador') AS motorista_nome
             FROM checklists c
             LEFT JOIN veiculos v ON c.veiculo_id = v.id
             LEFT JOIN motoristas m ON c.motorista_id = m.id
@@ -231,7 +206,6 @@ def buscar_historico_checklists():
 
 
 def buscar_itens_checklist(checklist_id):
-    """Consulta os itens inspecionados de um determinado checklist."""
     conn = get_connection()
     cursor = conn.cursor()
     try:
@@ -273,14 +247,16 @@ def render():
             for v in veiculos
         }
 
-        usuario_nome = st.session_state.get("usuario_nome", st.session_state.get("usuario", "Administrador"))
+        usuario_nome = st.session_state.get(
+            "usuario_nome", st.session_state.get("usuario", "Administrador")
+        )
         motorista_id = st.session_state.get("motorista_id")
 
-        # Script JS com alta prioridade e repetição contínua para capturar o GPS rapidamente
+        # Injetor JS de Geolocalização
         st.components.v1.html(
             """
             <script>
-            function pegarGPS() {
+            function capturarGPS() {
                 if (navigator.geolocation) {
                     navigator.geolocation.getCurrentPosition(
                         function(position) {
@@ -297,24 +273,30 @@ def render():
                         function(error) {
                             const url = new URL(window.parent.location);
                             if (!url.searchParams.get('gps_auto') || url.searchParams.get('gps_auto').includes('Aguardando')) {
-                                url.searchParams.set('gps_auto', 'Localização por Rede / Indisponível');
+                                url.searchParams.set('gps_auto', 'GPS Indisponível / Bloqueado pelo Navegador');
                                 window.parent.history.replaceState({}, '', url);
                             }
                         },
-                        { maximumAge: 0, timeout: 20000, enableHighAccuracy: true }
+                        { maximumAge: 0, timeout: 15000, enableHighAccuracy: true }
                     );
                 }
             }
-            pegarGPS();
-            setInterval(pegarGPS, 4000);
+            capturarGPS();
             </script>
             """,
             height=0,
         )
 
-        localizacao_gps = st.query_params.get(
-            "gps_auto", "Aguardando sinal de GPS..."
-        )
+        # Bloco de captura de localização visual na tela
+        st.write("📍 **Status da Localização (GPS):**")
+        gps_atual = st.query_params.get("gps_auto", "Aguardando sinal de GPS...")
+        
+        col_g1, col_g2 = st.columns([3, 1])
+        with col_g1:
+            st.info(f"Coordenadas / Endereço atual: **{gps_atual}**")
+        with col_g2:
+            if st.button("🔄 Atualizar GPS", use_container_width=True):
+                st.rerun()
 
         with st.form("form_checklist", clear_on_submit=True):
             st.subheader("1. Identificação")
@@ -324,7 +306,10 @@ def render():
 
             tipo_operacao = st.selectbox(
                 "Tipo de Operação*",
-                ["Saída (Retirada do Veículo)", "Entrada (Devolução ao Pátio)"]
+                [
+                    "Saída (Retirada do Veículo)",
+                    "Entrada (Devolução ao Pátio)",
+                ],
             )
 
             st.text_input(
@@ -375,16 +360,9 @@ def render():
 
             if btn_enviar:
                 foto_bytes = foto.getvalue() if foto else None
-
-                # Pausa inteligente para dar tempo ao GPS atualizar
-                with st.spinner("📍 Obtendo localização exata via GPS e salvando..."):
-                    tentativa = 0
-                    loc_atual = st.query_params.get("gps_auto", "Aguardando sinal de GPS...")
-                    
-                    while "Aguardando" in loc_atual and tentativa < 8:
-                        time.sleep(0.5)
-                        loc_atual = st.query_params.get("gps_auto", "Aguardando sinal de GPS...")
-                        tentativa += 1
+                loc_final = st.query_params.get(
+                    "gps_auto", "Localização não capturada"
+                )
 
                 try:
                     salvar_checklist(
@@ -395,12 +373,14 @@ def render():
                         respostas,
                         obs,
                         foto_bytes,
-                        loc_atual,
+                        loc_final,
                         usuario_nome,
                     )
                     st.success(
                         "Checklist registrado e salvo com sucesso no sistema!"
                     )
+                    time.sleep(1)
+                    st.rerun()
                 except Exception as e:
                     st.error(f"Erro ao salvar checklist: {e}")
 
@@ -455,7 +435,9 @@ def render():
             ]
         if apenas_pendencias:
             registros_filtrados = [
-                r for r in registros_filtrados if r["resultado"] == "Com pendências"
+                r
+                for r in registros_filtrados
+                if r["resultado"] == "Com pendências"
             ]
 
         st.write(f"Exibindo **{len(registros_filtrados)}** registos:")
@@ -464,27 +446,42 @@ def render():
             status_icone = (
                 "🔴" if reg["resultado"] == "Com pendências" else "🟢"
             )
-            
-            # Formatação limpa de Data e Hora
-            raw_data = str(reg.get("created_at", ""))
-            if raw_data and len(raw_data) >= 19:
-                data_formatada = raw_data[:19] # Corta milissegundos excessivos se houver
+
+            # Tratamento robusto de Data e Hora (Garante que nunca fique "Data N/A")
+            raw_data = reg.get("created_at")
+            if isinstance(raw_data, datetime.datetime):
+                data_formatada = raw_data.strftime("%d/%m/%Y %H:%M")
+            elif raw_data and str(raw_data).strip() not in ["", "None", "NaT"]:
+                data_str = str(raw_data).strip()
+                data_formatada = (
+                    data_str[:16].replace("T", " ")
+                    if len(data_str) >= 16
+                    else data_str
+                )
             else:
-                data_formatada = raw_data if raw_data else "Data N/A"
+                data_formatada = datetime.datetime.now().strftime(
+                    "%d/%m/%Y %H:%M"
+                )
 
-            localizacao_txt = reg.get('localizacao', 'Não informada')
+            localizacao_txt = reg.get("localizacao", "Não informada")
             op_txt = f" | 🔄 {reg.get('tipo_operacao', 'N/A')}"
-            loc_resumida = f" | 📍 {localizacao_txt[:35]}..." if len(localizacao_txt) > 35 else f" | 📍 {localizacao_txt}"
-
-            titulo_card = (
-                f"{status_icone} {reg['placa']} - {reg['modelo']}{op_txt}{loc_resumida} | 🕒 {data_formatada}"
+            loc_resumida = (
+                f" | 📍 {localizacao_txt[:30]}..."
+                if len(localizacao_txt) > 30
+                else f" | 📍 {localizacao_txt}"
             )
 
+            titulo_card = f"{status_icone} {reg['placa']} - {reg['modelo']}{op_txt}{loc_resumida} | 🕒 {data_formatada}"
+
             with st.expander(titulo_card):
-                st.write(f"**Tipo de Operação:** {reg.get('tipo_operacao', 'N/A')}")
+                st.write(
+                    f"**Tipo de Operação:** {reg.get('tipo_operacao', 'N/A')}"
+                )
                 st.write(f"**Responsável / Admin:** {reg['motorista_nome']}")
                 st.write(f"**Data e Hora do Registro:** {data_formatada}")
-                st.write(f"**Endereço / Localização (GPS):** {localizacao_txt}")
+                st.write(
+                    f"**Endereço / Localização (GPS):** {localizacao_txt}"
+                )
                 st.write(f"**KM Inspecionado:** {reg['km']} km")
                 st.write(f"**Resultado Geral:** {reg['resultado']}")
 
@@ -502,4 +499,6 @@ def render():
                             f" {item_f['resultado']}"
                         )
                 else:
-                    st.success("✅ Todos os itens foram aprovados nesta vistoria.")
+                    st.success(
+                        "✅ Todos os itens foram aprovados nesta vistoria."
+                    )
