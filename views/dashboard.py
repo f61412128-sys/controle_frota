@@ -556,7 +556,7 @@ def render_dashboard(contar_registros_fn=None):
 
     c5, c6, c7, c8 = st.columns(4)
     c5.metric("💰 Custo Manutenções", f"R$ {custo_total_manut:,.2f}")
-    c6.metric("👨‍‍‍‍✈️ Motoristas", total_motoristas)
+    c6.metric("👨✈️ Motoristas", total_motoristas)
     c7.metric("⚠ Ocorrências", total_ocorrencias)
     c8.metric("📄 Venc. Contratos", total_venc_contratos)
 
@@ -821,6 +821,9 @@ def render_dashboard(contar_registros_fn=None):
                                     if col_data_abast
                                     else ""
                                 )
+                                if isinstance(comprovante_img, memoryview):
+                                    comprovante_img = bytes(comprovante_img)
+
                                 if isinstance(comprovante_img, bytes):
                                     if len(comprovante_img) > 0:
                                         img_obj = Image.open(io.BytesIO(comprovante_img))
@@ -1047,9 +1050,12 @@ def render_dashboard(contar_registros_fn=None):
                     unsafe_allow_html=True,
                 )
 
-                # Exibição segura e limpa da foto da ocorrência
+                # Exibição segura e limpa da foto da ocorrência (com suporte a memoryview)
                 if foto_oc is not None:
                     try:
+                        if isinstance(foto_oc, memoryview):
+                            foto_oc = bytes(foto_oc)
+
                         if isinstance(foto_oc, bytes):
                             if len(foto_oc) > 0:
                                 imagem_obj = Image.open(io.BytesIO(foto_oc))
