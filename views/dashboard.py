@@ -66,6 +66,8 @@ def render_cards_veiculos_estilizados(df_veiculos):
         status_disp = row.get('status_disponibilidade', 'Disponível')
         ultimo_resp = row.get('ultimo_responsavel', 'Sem registo')
         tipo_mov = row.get('ultimo_tipo_movimento', '')
+        data_hora_chk = row.get('ultimo_data_hora', 'N/A')
+        endereco_chk = row.get('ultimo_endereco', 'Não informado')
         
         if status_disp == 'Disponível':
             badge_html = '<span class="badge-disponivel">🟢 Disponível (No Pátio)</span>'
@@ -77,12 +79,13 @@ def render_cards_veiculos_estilizados(df_veiculos):
         st.markdown(f"""
             <div class="veiculo-card">
                 <div class="veiculo-header">
-                    <span class="veiculo-placa">🚗 {placa}</span>
+                    <span class="veiculo-placa">🚗 {placa} - {modelo}</span>
                     {badge_html}
                 </div>
-                <div class="veiculo-info">Modelo: <span>{modelo}</span></div>
                 <div class="veiculo-info">Tipo: <span>{tipo}</span></div>
                 <div class="veiculo-info">Último Registo{mov_text}: <span>{ultimo_resp}</span></div>
+                <div class="veiculo-info">Data e Hora: <span>{data_hora_chk}</span></div>
+                <div class="veiculo-info">Endereço: <span>{endereco_chk}</span></div>
             </div>
         """, unsafe_allow_html=True)
 
@@ -138,6 +141,8 @@ def render_dashboard(contar_registros_fn=None):
         status_list = []
         resp_list = []
         tipo_mov_list = []
+        data_hora_list = []
+        endereco_list = []
 
         for _, v_row in df_veiculos.iterrows():
             v_id = v_row.get('id')
@@ -161,6 +166,23 @@ def render_dashboard(contar_registros_fn=None):
                         pass
 
                 ult_chk = df_chk_veiculo.iloc[0]
+
+                # Data e Hora formatada
+                raw_data = ult_chk.get(col_data) if col_data else None
+                if isinstance(raw_data, datetime.datetime):
+                    data_formatada = raw_data.strftime("%d/%m/%Y %H:%M")
+                elif raw_data and str(raw_data).strip() not in ["", "None", "NaT"]:
+                    data_str = str(raw_data).strip()
+                    data_formatada = data_str[:16].replace("T", " ") if len(data_str) >= 16 else data_str
+                else:
+                    data_formatada = "N/A"
+
+                # Endereço
+                endereco_chk = "Não informado"
+                for col_loc in ['localizacao', 'endereco', 'gps']:
+                    if col_loc in ult_chk and pd.notna(ult_chk[col_loc]):
+                        endereco_chk = str(ult_chk[col_loc])
+                        break
 
                 # Tenta descobrir o responsável
                 resp = "Administrador / Sistema"
@@ -202,18 +224,26 @@ def render_dashboard(contar_registros_fn=None):
                 status_list.append(status_disp)
                 resp_list.append(resp)
                 tipo_mov_list.append(tipo_mov if tipo_mov else "Registo Geral")
+                data_hora_list.append(data_formatada)
+                endereco_list.append(endereco_chk)
             else:
                 status_list.append("Disponível")
                 resp_list.append("Sem checklist recente")
                 tipo_mov_list.append("")
+                data_hora_list.append("N/A")
+                endereco_list.append("Não informado")
 
         df_veiculos['status_disponibilidade'] = status_list
         df_veiculos['ultimo_responsavel'] = resp_list
         df_veiculos['ultimo_tipo_movimento'] = tipo_mov_list
+        df_veiculos['ultimo_data_hora'] = data_hora_list
+        df_veiculos['ultimo_endereco'] = endereco_list
     else:
         df_veiculos['status_disponibilidade'] = "Disponível"
         df_veiculos['ultimo_responsavel'] = "N/A"
         df_veiculos['ultimo_tipo_movimento'] = ""
+        df_veiculos['ultimo_data_hora'] = "N/A"
+        df_veiculos['ultimo_endereco'] = "Não informado"
 
     # Cálculo do Custo de Manutenções
     custo_total_manut = 0.0
