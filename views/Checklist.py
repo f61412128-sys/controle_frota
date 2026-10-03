@@ -1,252 +1,3 @@
-import json
-import time
-import urllib.request
-import pandas as pd
-import streamlit as st
-from database.connection import get_connection
-from views.services.cadastros_service import listar_motoristas, listar_veiculos
-
-
-def obter_endereco_reverso(lat_lon_str):
-    """Converte coordenadas (latitude, longitude) num endereço legível (rua, bairro, cidade)."""
-    try:
-        if (
-            not lat_lon_str
-            or "," not in lat_lon_str
-            or "Negado" in lat_lon_str
-            or "Aguardando" in lat_lon_str
-        ):
-            return lat_lon_str
-
-        partes = lat_lon_str.split(",")
-        if len(partes) != 2:
-            return lat_lon_str
-
-        lat = partes[0].strip()
-        lon = partes[1].strip()
-
-        url = f"https://nominatim.openstreetmap.org/reverse?format=json&lat={lat}&lon={lon}&zoom=18&addressdetails=1"
-        req = urllib.request.Request(
-            url, headers={"User-Agent": "ControleFrotaApp/1.0"}
-        )
-
-        with urllib.request.urlopen(req, timeout=4) as response:
-            data = json.loads(response.read().decode())
-            if "display_name" in data:
-                return data["display_name"]
-    except Exception:
-        pass
-
-    return lat_lon_str
-
-
-def salvar_checklist(
-    veiculo_id,
-    motorista_id,
-    tipo_operacao,
-    km,
-    itens_respostas,
-    observacoes,
-    foto_bytes,
-    localizacao,
-    usuario_responsavel,
-):
-    # Converte as coordenadas em endereço legível
-    localizacao_amigavel = obter_endereco_reverso(localizacao)
-
-    conn = get_connection()
-    cursor = conn.cursor()
-
-    try:
-        # Garante compatibilidade e criação de colunas caso ainda não existam no PostgreSQL
-        cursor.execute(
-            "SELECT column_name FROM information_schema.columns WHERE table_name = 'checklists'"
-        )
-        colunas_chk = [col[0] for col in cursor.fetchall()]
-        
-        if "localizacao" not in colunas_chk:
-            try:
-                cursor.execute("ALTER TABLE checklists ADD COLUMN localizacao TEXT")
-                conn.commit()
-            except Exception:
-                conn.rollback()
-
-        if "foto" not in colunas_chk:
-            try:
-                cursor.execute("ALTER TABLE checklists ADD COLUMN foto BYTEA")
-                conn.commit()
-            except Exception:
-                conn.rollback()
-
-        if "tipo_operacao" not in colunas_chk:
-            try:
-                cursor.execute("ALTER TABLE checklists ADD COLUMN tipo_operacao TEXT")
-                conn.commit()
-            except Exception:
-                conn.rollback()
-
-        if "usuario_responsavel" not in colunas_chk:
-            try:
-                cursor.execute("ALTER TABLE checklists ADD COLUMN usuario_responsavel TEXT")
-                conn.commit()
-            except Exception:
-                conn.rollback()
-
-        # 1. Determina resultado geral
-        tem_pendencia = any(res == "NÃO OK" for res in itens_respostas.values())
-        resultado_geral = "Com pendências" if tem_pendencia else "Aprovado"
-
-        # 2. Salva o Checklist e obtém o ID gerado (PostgreSQL utiliza RETURNING id)
-        cursor.execute(
-            """
-            INSERT INTO checklists (veiculo_id, motorista_id, tipo_operacao, km, resultado, observacoes, localizacao, foto, usuario_responsavel)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-            RETURNING id
-            """,
-            (
-                veiculo_id,
-                motorista_id if motorista_id else 1,
-                tipo_operacao,
-                km,
-                resultado_geral,
-                observacoes,
-                localizacao_amigavel,
-                foto_bytes,
-                usuario_responsavel,
-            ),
-        )
-        checklist_id = cursor.fetchone()[0]
-
-        # 3. Salva os Itens e abre Ocorrências automáticas se houver falha
-        for (categoria, item), resp in itens_respostas.items():
-            cursor.execute(
-                """
-                INSERT INTO itens_checklist (checklist_id, categoria, item, resultado)
-                VALUES (%s, %s, %s, %s)
-                """,
-                (checklist_id, categoria, item, resp),
-            )
-
-            if resp == "NÃO OK":
-                cursor.execute(
-                    "SELECT column_name FROM information_schema.columns WHERE table_name = 'ocorrencias'"
-                )
-                colunas_oco = [col[0] for col in cursor.fetchall()]
-
-                val_oco = {
-                    "veiculo_id": veiculo_id,
-                    "motorista_id": motorista_id if motorista_id else 1,
-                    "checklist_id": checklist_id,
-                    "item": item,
-                    "descricao": (
-                        f"Avaria apontada no checklist (Local: {localizacao_amigavel}):"
-                        f" {item}"
-                    ),
-                    "status": "Aberto",
-                }
-                if "gravidade" in colunas_oco:
-                    val_oco["gravidade"] = "Média"
-
-                cols = ", ".join(val_oco.keys())
-                placeholders = ", ".join(["%s"] * len(val_oco))
-                cursor.execute(
-                    f"INSERT INTO ocorrencias ({cols}) VALUES ({placeholders})",
-                    list(val_oco.values()),
-                )
-
-        # 4. Atualiza o KM do veículo
-        cursor.execute(
-            "UPDATE veiculos SET km_atual = %s WHERE id = %s", (km, veiculo_id)
-        )
-        conn.commit()
-    except Exception as e:
-        conn.rollback()
-        raise e
-    finally:
-        cursor.close()
-        conn.close()
-
-
-def buscar_historico_checklists():
-    """Consulta o histórico de checklists de forma segura na base de dados PostgreSQL."""
-    conn = get_connection()
-    cursor = conn.cursor()
-
-    try:
-        cursor.execute(
-            "SELECT column_name FROM information_schema.columns WHERE table_name = 'checklists'"
-        )
-        colunas_chk = [col[0] for col in cursor.fetchall()]
-
-        col_data_sql = "''"
-        if "created_at" in colunas_chk:
-            col_data_sql = "c.created_at"
-        elif "data" in colunas_chk:
-            col_data_sql = "c.data"
-
-        col_loc_sql = (
-            "c.localizacao"
-            if "localizacao" in colunas_chk
-            else "'' AS localizacao"
-        )
-        
-        col_op_sql = (
-            "c.tipo_operacao"
-            if "tipo_operacao" in colunas_chk
-            else "'Saída' AS tipo_operacao"
-        )
-        
-        col_resp_sql = (
-            "c.usuario_responsavel"
-            if "usuario_responsavel" in colunas_chk
-            else "NULL AS usuario_responsavel"
-        )
-
-        query = f"""
-            SELECT 
-                c.id,
-                {col_data_sql} AS created_at,
-                c.km,
-                c.resultado,
-                c.observacoes,
-                {col_loc_sql},
-                {col_op_sql},
-                {col_resp_sql},
-                v.placa,
-                v.modelo,
-                COALESCE(c.usuario_responsavel, m.nome, u.nome, 'Não informado') AS motorista_nome
-            FROM checklists c
-            LEFT JOIN veiculos v ON c.veiculo_id = v.id
-            LEFT JOIN motoristas m ON c.motorista_id = m.id
-            LEFT JOIN usuarios u ON c.motorista_id = u.id
-            ORDER BY c.id DESC
-        """
-        cursor.execute(query)
-        rows = cursor.fetchall()
-        col_names = [desc[0] for desc in cursor.description]
-        return [dict(zip(col_names, r)) for r in rows]
-    finally:
-        cursor.close()
-        conn.close()
-
-
-def buscar_itens_checklist(checklist_id):
-    """Consulta os itens inspecionados de um determinado checklist."""
-    conn = get_connection()
-    cursor = conn.cursor()
-    try:
-        cursor.execute(
-            "SELECT categoria, item, resultado FROM itens_checklist WHERE checklist_id = %s",
-            (checklist_id,),
-        )
-        rows = cursor.fetchall()
-        col_names = [desc[0] for desc in cursor.description]
-        return [dict(zip(col_names, r)) for r in rows]
-    finally:
-        cursor.close()
-        conn.close()
-
-
 def render():
     st.title("📲 Checklist Diário")
 
@@ -264,8 +15,7 @@ def render():
 
         if not veiculos:
             st.warning(
-                "É necessário ter veículos cadastrados no sistema para realizar o"
-                " checklist."
+                "É necessário ter veículos cadastrados no sistema para realizar o checklist."
             )
             return
 
@@ -302,12 +52,12 @@ def render():
                                 window.parent.history.replaceState({}, '', url);
                             }
                         },
-                        { maximumAge: 0, timeout: 15000, enableHighAccuracy: true }
+                        { maximumAge: 0, timeout: 20000, enableHighAccuracy: true }
                     );
                 }
             }
             pegarGPS();
-            setInterval(pegarGPS, 3000);
+            setInterval(pegarGPS, 4000);
             </script>
             """,
             height=0,
@@ -377,16 +127,15 @@ def render():
             if btn_enviar:
                 foto_bytes = foto.getvalue() if foto else None
 
-                tentativa = 0
-                loc_atual = st.query_params.get(
-                    "gps_auto", "Aguardando sinal de GPS..."
-                )
-                while "Aguardando" in loc_atual and tentativa < 4:
-                    time.sleep(0.5)
-                    loc_atual = st.query_params.get(
-                        "gps_auto", "Aguardando sinal de GPS..."
-                    )
-                    tentativa += 1
+                # ADICIONANDO PAUSA INTELIGENTE DE ATÉ 4 SEGUNDOS PARA CAPTURA DE GPS
+                with st.spinner("📍 Obtendo localização exata via GPS e salvando..."):
+                    tentativa = 0
+                    loc_atual = st.query_params.get("gps_auto", "Aguardando sinal de GPS...")
+                    
+                    while "Aguardando" in loc_atual and tentativa < 8:
+                        time.sleep(0.5)
+                        loc_atual = st.query_params.get("gps_auto", "Aguardando sinal de GPS...")
+                        tentativa += 1
 
                 try:
                     salvar_checklist(
@@ -401,18 +150,17 @@ def render():
                         usuario_nome,
                     )
                     st.success(
-                        "Checklist registrado e salvo com sucesso no sistema."
+                        "Checklist registrado e salvo com sucesso no sistema!"
                     )
                 except Exception as e:
                     st.error(f"Erro ao salvar checklist: {e}")
 
     # -------------------------------------------------------------------------
-    # ABA 2: HISTÓRICO DE REGISTROS (ÁREA EXCLUSIVA PARA ADMIN / CONSULTAS)
+    # ABA 2: HISTÓRICO DE REGISTROS
     # -------------------------------------------------------------------------
     with tab_historico:
         st.caption(
-            "Consulte os históricos de vistorias, avarias e localização exata"
-            " reportada."
+            "Consulte os históricos de vistorias, avarias e localização exata reportada."
         )
 
         registros = buscar_historico_checklists()
