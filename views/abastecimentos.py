@@ -68,34 +68,52 @@ def render():
 
         st.divider()
         st.subheader("📸 Comprovante / Nota Fiscal")
-        st.caption("Carregue uma imagem ou foto do recibo/cupom fiscal.")
         
-        foto = st.file_uploader(
-            "Carregar imagem do comprovante", 
-            type=["png", "jpg", "jpeg", "heic"], 
-            key="foto_comprovante_abast",
-            label_visibility="collapsed"
+        tipo_envio = st.radio(
+            "Método de captura da foto:", 
+            ["Tirar Foto com a Câmara", "Carregar Imagem"], 
+            horizontal=True,
+            key="tipo_envio_abastecimento"
         )
 
-        # Gestão e pré-visualização segura da imagem no session_state para evitar perda de dados
-        if foto is not None:
-            st.session_state["abastecimento_foto_bytes"] = foto.getvalue()
+        # Inicializa a chave de bytes na sessão se não existir
+        if "abastecimento_foto_bytes" not in st.session_state:
+            st.session_state["abastecimento_foto_bytes"] = None
+
+        if tipo_envio == "Tirar Foto com a Câmara":
+            foto_cam = st.camera_input("Aponte para o comprovante de abastecimento", key="cam_abast")
+            if foto_cam is not None:
+                st.session_state["abastecimento_foto_bytes"] = foto_cam.getvalue()
+        else:
+            foto_arq = st.file_uploader(
+                "Carregar imagem do comprovante", 
+                type=["png", "jpg", "jpeg", "heic"], 
+                key="file_abast"
+            )
+            if foto_arq is not None:
+                st.session_state["abastecimento_foto_bytes"] = foto_arq.getvalue()
+
+        # Pré-visualização persistente da imagem armazenada na sessão
+        if st.session_state["abastecimento_foto_bytes"] is not None:
             try:
                 img_preview = Image.open(io.BytesIO(st.session_state["abastecimento_foto_bytes"]))
-                st.image(img_preview, caption="🧾 Pré-visualização do Comprovante", width=180)
+                st.image(img_preview, caption="🧾 Pré-visualização do Comprovante Capturado", width=200)
+                if st.button("🗑 Limpar / Tirar Outra Foto", key="btn_limpar_foto_abast"):
+                    st.session_state["abastecimento_foto_bytes"] = None
+                    st.rerun()
             except Exception:
                 pass
-        else:
-            if "abastecimento_foto_bytes" not in st.session_state:
-                st.session_state["abastecimento_foto_bytes"] = None
+
+        st.divider()
 
         if st.button("✅ Salvar Abastecimento", use_container_width=True):
             try:
                 foto_bytes = st.session_state.get("abastecimento_foto_bytes", None)
                 salvar_abastecimento(veiculo_id, km, litros, valor, foto_bytes, usuario)
                 
+                # Limpa a foto da sessão após salvar com sucesso
                 if "abastecimento_foto_bytes" in st.session_state:
-                    del st.session_state["abastecimento_foto_bytes"]
+                    st.session_state["abastecimento_foto_bytes"] = None
 
                 st.success("Abastecimento registado com sucesso!")
                 st.rerun()
