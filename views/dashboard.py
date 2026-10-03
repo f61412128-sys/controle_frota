@@ -396,9 +396,15 @@ def render_dashboard(contar_registros_fn=None):
                 except Exception:
                     pass
 
+    # Correção robusta para contagem de contratos vencidos/a vencer
     total_venc_contratos = 0
     df_contratos = pd.DataFrame()
-    for t_c in ["contratos", "locacoes", "gestao_contratos"]:
+    for t_c in [
+        "contratos",
+        "locacoes",
+        "gestao_contratos",
+        "veiculos_contratos",
+    ]:
         if t_c in tabelas_existentes:
             df_temp = ler_tabela_direta(f"SELECT * FROM {t_c}")
             if not df_temp.empty:
@@ -413,6 +419,7 @@ def render_dashboard(contar_registros_fn=None):
             "termino_contrato",
             "data_termino",
             "vencimento_contrato",
+            "data_vencimento",
         ]:
             if c in df_contratos.columns:
                 col_venc = c
@@ -422,6 +429,32 @@ def render_dashboard(contar_registros_fn=None):
                 hoje = pd.Timestamp.now().normalize()
                 datas_venc = pd.to_datetime(
                     df_contratos[col_venc], errors="coerce"
+                )
+                limite = hoje + pd.Timedelta(days=30)
+                total_venc_contratos = int(
+                    ((datas_venc >= hoje) & (datas_venc <= limite)).sum()
+                    + (datas_venc < hoje).sum()
+                )
+            except Exception:
+                pass
+
+    if total_venc_contratos == 0 and not df_veiculos.empty:
+        col_venc_v = None
+        for c in [
+            "vencimento_contrato",
+            "data_fim_contrato",
+            "fim_contrato",
+            "vencimento",
+            "data_vencimento",
+        ]:
+            if c in df_veiculos.columns:
+                col_venc_v = c
+                break
+        if col_venc_v:
+            try:
+                hoje = pd.Timestamp.now().normalize()
+                datas_venc = pd.to_datetime(
+                    df_veiculos[col_venc_v], errors="coerce"
                 )
                 limite = hoje + pd.Timedelta(days=30)
                 total_venc_contratos = int(
@@ -472,7 +505,7 @@ def render_dashboard(contar_registros_fn=None):
 
     st.divider()
 
-    # Criação das abas, incluindo a nova aba de Consumo
+    # Criação das abas
     (
         tab_contratos,
         tab_consumo,
@@ -499,11 +532,14 @@ def render_dashboard(contar_registros_fn=None):
     with tab_consumo:
         st.markdown("##### 📊 Indicadores de Consumo e Combustível")
 
-        # Cálculos de consumo do dia e do mês se houver dados
         custo_dia = 0.0
         litros_dia = 0.0
         custo_mes = 0.0
         litros_mes = 0.0
+
+        col_data_abast = None
+        col_valor_abast = None
+        col_litros_abast = None
 
         if not df_abastecimentos.empty:
             col_data_abast = next(
@@ -580,7 +616,7 @@ def render_dashboard(contar_registros_fn=None):
                 except Exception:
                     pass
 
-        # Métricas rápidas no topo da aba de consumo
+        # Métricas gerais no topo da aba
         m1, m2, m3, m4 = st.columns(4)
         m1.metric("⛽ Litros Hoje", f"{litros_dia:.1f} L")
         m2.metric("💵 Gasto Hoje", f"R$ {custo_dia:,.2f}")
@@ -588,12 +624,14 @@ def render_dashboard(contar_registros_fn=None):
         m4.metric("💰 Gasto no Mês", f"R$ {custo_mes:,.2f}")
 
         st.divider()
-        st.markdown("##### 🚗 Desempenho de Consumo por Veículo")
+        st.markdown(
+            "##### 🚗 Desempenho de Consumo Detalhado por Cada Veículo"
+        )
 
         if df_veiculos.empty:
             st.info("Nenhum veículo registado.")
         else:
-            # Reutiliza o estilo dos cartões para exibir o consumo detalhado por carro
+            # Estilo dos cartões individuais por veículo para o consumo
             st.markdown(
                 """
                 <style>
@@ -630,7 +668,6 @@ def render_dashboard(contar_registros_fn=None):
                 modelo = str(row.get("modelo", "N/A"))
                 consumo = row.get("consumo_medio", "Não calculado")
 
-                # Calcula total gasto neste veículo específico se houver tabela de abastecimento
                 gasto_veiculo = 0.0
                 litros_veiculo = 0.0
                 km_percorrido = "Não registado"
@@ -689,12 +726,13 @@ def render_dashboard(contar_registros_fn=None):
                                     f"{k_vals.iloc[-1] - k_vals.iloc[0]} km"
                                 )
 
+                # Renderiza o card individual por carro dentro da aba de consumo
                 st.markdown(
                     f"""
                     <div class="consumo-card">
                         <div class="consumo-header">⛽ {placa} - {modelo}</div>
                         <div class="consumo-info">Consumo Médio: <span>{consumo}</span></div>
-                        <div class="consumo-info">KM Percorrido (Base Abastecimentos): <span>{km_percorrido}</span></div>
+                        <div class="consumo-info">KM Percorrido: <span>{km_percorrido}</span></div>
                         <div class="consumo-info">Total Litros Abastecidos: <span>{litros_veiculo:.1f} L</span></div>
                         <div class="consumo-info">Gasto Acumulado: <span>R$ {gasto_veiculo:,.2f}</span></div>
                     </div>
