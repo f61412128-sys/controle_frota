@@ -55,6 +55,9 @@ def salvar_checklist(
     fuso_brasilia = datetime.timezone(datetime.timedelta(hours=-3))
     data_hora_atual = datetime.datetime.now(fuso_brasilia).strftime("%Y-%m-%d %H:%M:%S")
 
+    # Garante conversão correta para bytes binários se houver imagem
+    foto_param = memoryview(foto_bytes) if foto_bytes else None
+
     conn = get_connection()
     cursor = conn.cursor()
 
@@ -95,7 +98,7 @@ def salvar_checklist(
                 resultado_geral,
                 observacoes,
                 localizacao_amigavel,
-                foto_bytes,
+                foto_param,
                 usuario_responsavel,
                 data_hora_atual,
             ),
@@ -133,7 +136,7 @@ def salvar_checklist(
                     "descricao": f"Avaria apontada no checklist (Local: {localizacao_amigavel}): {item}",
                     "status": "Aberto",
                     "usuario_responsavel": usuario_responsavel,
-                    "foto": foto_bytes,
+                    "foto": foto_param,
                     "created_at": data_hora_atual
                 }
                 if "gravidade" in colunas_oco:
@@ -451,7 +454,10 @@ def render():
             titulo_card = f"{status_icone} {reg['placa']} - {reg['modelo']}{op_txt}{loc_resumida} | 🕒 {data_formatada}"
 
             with st.expander(titulo_card):
-                col_detalhes, col_foto_card = st.columns([3, 1] if reg.get("foto") is not None else [1, 0.001])
+                # Verifica de forma segura se a foto existe e não está vazia
+                tem_foto_valida = reg.get("foto") is not None and len(bytes(reg.get("foto"))) > 0 if isinstance(reg.get("foto"), (bytes, memoryview)) else bool(reg.get("foto"))
+
+                col_detalhes, col_foto_card = st.columns([3, 1] if tem_foto_valida else [1, 0.001])
 
                 with col_detalhes:
                     st.write(f"**Tipo de Operação:** {reg.get('tipo_operacao', 'N/A')}")
@@ -464,10 +470,9 @@ def render():
                     if reg["observacoes"]:
                         st.info(f"**Observações:** {reg['observacoes']}")
 
-                if reg.get("foto") is not None:
+                if tem_foto_valida:
                     with col_foto_card:
                         try:
-                            # Converte memoryview se necessário para exibição correta no histórico
                             foto_hist = reg["foto"]
                             if isinstance(foto_hist, memoryview):
                                 foto_hist = bytes(foto_hist)
