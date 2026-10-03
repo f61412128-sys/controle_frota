@@ -245,36 +245,61 @@ def render():
     with tab_novo:
         st.caption("Preencha a inspeção do veículo com atenção.")
 
-        # Script invisível para captura automática de GPS em segundo plano (sem botão dedicado)
-        components.html("""
-            <script>
-            if (navigator.geolocation) {
-                navigator.geolocation.getCurrentPosition(
-                    function(position) {
-                        const lat = position.coords.latitude;
-                        const lon = position.coords.longitude;
-                        const coords = lat + "," + lon;
-                        const urlParams = new URLSearchParams(window.location.search);
-                        if (urlParams.get('gps_auto') !== coords) {
-                            urlParams.set('gps_auto', coords);
-                            const newUrl = window.location.pathname + '?' + urlParams.toString();
-                            window.history.replaceState({}, '', newUrl);
-                        }
-                    },
-                    function(error) {
-                        console.log("Erro no GPS: ", error.message);
-                    },
-                    { timeout: 10000, enableHighAccuracy: true }
-                );
-            }
-            </script>
-        """, height=0)
-
-        # Captura o parâmetro de GPS inserido pelo script JS na URL
+        # Processamento do envio acionado pelo botão inteligente com GPS embutido
         query_params = st.query_params
-        gps_recebido = query_params.get("gps_auto", None)
-        if gps_recebido and gps_recebido != "GPS Não Capturado":
-            st.session_state["gps_localizacao_atual"] = gps_recebido
+        if query_params.get("submit_action") == "true":
+            loc_final = query_params.get("gps_auto", "GPS Não Capturado")
+            foto_bytes = st.session_state.get("checklist_foto_bytes", None)
+
+            veiculo_sel_val = st.session_state.get("sel_veiculo")
+            tipo_op_val = st.session_state.get("sel_tipo_operacao")
+            km_val = st.session_state.get("num_km")
+            obs_val = st.session_state.get("txt_obs", "")
+            
+            usuario_nome = st.session_state.get(
+                "usuario_nome", st.session_state.get("usuario", "Administrador")
+            )
+            motorista_id = st.session_state.get("motorista_id")
+
+            itens_checklist_chk = [
+                ("Pneus", "Calibragem e Estado Geral"),
+                ("Fluidos", "Nível de Óleo do Motor"),
+                ("Fluidos", "Nível de Água / Radiador"),
+                ("Elétrica", "Faróis e Setas"),
+                ("Elétrica", "Luzes de Freio e Ré"),
+                ("Segurança", "Cinto de Segurança e Espelhos"),
+                ("Estrutura", "Limpeza e Funilaria"),
+            ]
+
+            respostas_val = {}
+            for cat, item in itens_checklist_chk:
+                respostas_val[(cat, item)] = st.session_state.get(f"item_{cat}_{item}", "OK")
+
+            veiculos = listar_veiculos()
+            mapa_v = {f"{v['placa']} - {v['modelo']}": (v["id"], v["km_atual"]) for v in veiculos}
+
+            if veiculo_sel_val and veiculo_sel_val in mapa_v:
+                veiculo_id_val, _ = mapa_v[veiculo_sel_val]
+                try:
+                    salvar_checklist(
+                        veiculo_id_val,
+                        motorista_id,
+                        tipo_op_val,
+                        km_val,
+                        respostas_val,
+                        obs_val,
+                        foto_bytes,
+                        loc_final,
+                        usuario_nome,
+                    )
+                    st.session_state["checklist_foto_bytes"] = None
+                    st.query_params.clear()
+                    st.success("Checklist registrado e salvo com sucesso no sistema!")
+                    time.sleep(1)
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Erro ao salvar checklist: {e}")
+                    st.query_params.clear()
 
         veiculos = listar_veiculos()
 
@@ -292,10 +317,9 @@ def render():
         usuario_nome = st.session_state.get(
             "usuario_nome", st.session_state.get("usuario", "Administrador")
         )
-        motorista_id = st.session_state.get("motorista_id")
 
         st.subheader("1. Identificação")
-        veiculo_sel = st.selectbox("Selecione o Veículo*", list(mapa_v.keys()))
+        veiculo_sel = st.selectbox("Selecione o Veículo*", list(mapa_v.keys()), key="sel_veiculo")
         veiculo_id, km_anterior = mapa_v[veiculo_sel]
 
         tipo_operacao = st.selectbox(
@@ -304,6 +328,7 @@ def render():
                 "Saída (Retirada do Veículo)",
                 "Entrada (Devolução ao Pátio)",
             ],
+            key="sel_tipo_operacao"
         )
 
         st.text_input("Responsável pelo Registo", value=usuario_nome, disabled=True)
@@ -312,6 +337,7 @@ def render():
             "Quilometragem Atual (KM)*",
             min_value=int(km_anterior),
             value=int(km_anterior),
+            key="num_km"
         )
 
         st.divider()
@@ -327,9 +353,8 @@ def render():
             ("Estrutura", "Limpeza e Funilaria"),
         ]
 
-        respostas = {}
         for cat, item in itens_checklist:
-            respostas[(cat, item)] = st.radio(
+            st.radio(
                 f"**{item}**",
                 ["OK", "NÃO OK", "N/A"],
                 horizontal=True,
@@ -349,47 +374,71 @@ def render():
             label_visibility="collapsed"
         )
 
-        # Gestão e pré-visualização segura da imagem carregada no session_state
         if foto is not None:
             st.session_state["checklist_foto_bytes"] = foto.getvalue()
+
+        if st.session_state.get("checklist_foto_bytes"):
             try:
                 img_preview = Image.open(io.BytesIO(st.session_state["checklist_foto_bytes"]))
                 st.image(img_preview, caption="📸 Pré-visualização da Foto Capturada", width=180)
             except Exception:
                 pass
-        else:
-            if "checklist_foto_bytes" not in st.session_state:
-                st.session_state["checklist_foto_bytes"] = None
 
-        obs = st.text_area("Observações / Detalhes de problemas")
+        obs = st.text_area("Observações / Detalhes de problemas", key="txt_obs")
 
-        if st.button("✅ Finalizar e Enviar Checklist", use_container_width=True):
-            with st.spinner("🛰 Consolidando dados de GPS e gravando registo..."):
-                foto_bytes = st.session_state.get("checklist_foto_bytes", None)
-                loc_final = st.session_state.get("gps_localizacao_atual", "GPS Não Capturado")
+        st.markdown("<br>", unsafe_allow_html=True)
 
-                try:
-                    salvar_checklist(
-                        veiculo_id,
-                        motorista_id,
-                        tipo_operacao,
-                        km,
-                        respostas,
-                        obs,
-                        foto_bytes,
-                        loc_final,
-                        usuario_nome,
-                    )
-                    if "gps_localizacao_atual" in st.session_state:
-                        del st.session_state["gps_localizacao_atual"]
-                    if "checklist_foto_bytes" in st.session_state:
-                        del st.session_state["checklist_foto_bytes"]
-
-                    st.success("Checklist registrado e salvo com sucesso no sistema!")
-                    time.sleep(1)
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Erro ao salvar checklist: {e}")
+        # Botão Inteligente Integrado com Captura de GPS no Clique (Sem botão dedicado extra)
+        components.html("""
+            <div style="text-align: center; width: 100%;">
+                <button id="btn_enviar" onclick="capturarGpsEEnviar()" style="
+                    background-color: #ff4b4b;
+                    color: white;
+                    border: none;
+                    padding: 0.8rem 1rem;
+                    font-size: 1rem;
+                    font-weight: 600;
+                    border-radius: 0.5rem;
+                    width: 100%;
+                    cursor: pointer;
+                    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+                    font-family: sans-serif;
+                ">✅ Finalizar e Enviar Checklist</button>
+            </div>
+            <script>
+            function capturarGpsEEnviar() {
+                const btn = document.getElementById('btn_enviar');
+                btn.innerText = "🛰 Obtendo GPS e Salvando...";
+                btn.disabled = true;
+                
+                if (navigator.geolocation) {
+                    navigator.geolocation.getCurrentPosition(
+                        function(position) {
+                            const lat = position.coords.latitude;
+                            const lon = position.coords.longitude;
+                            const coords = lat + "," + lon;
+                            const urlParams = new URLSearchParams(window.parent.location.search);
+                            urlParams.set('gps_auto', coords);
+                            urlParams.set('submit_action', 'true');
+                            window.parent.location.search = urlParams.toString();
+                        },
+                        function(error) {
+                            const urlParams = new URLSearchParams(window.parent.location.search);
+                            urlParams.set('gps_auto', 'GPS Não Capturado');
+                            urlParams.set('submit_action', 'true');
+                            window.parent.location.search = urlParams.toString();
+                        },
+                        { timeout: 10000, enableHighAccuracy: true }
+                    );
+                } else {
+                    const urlParams = new URLSearchParams(window.parent.location.search);
+                    urlParams.set('gps_auto', 'GPS Não Capturado');
+                    urlParams.set('submit_action', 'true');
+                    window.parent.location.search = urlParams.toString();
+                }
+            }
+            </script>
+        """, height=65)
 
     # -------------------------------------------------------------------------
     # ABA 2: HISTÓRICO DE REGISTROS
@@ -423,7 +472,7 @@ def render():
                     set(
                         f"{r['placa']} - {r['modelo']}"
                         for r in registros
-                        if r["placa"]
+                        if r['placa']
                     )
                 )
             )
