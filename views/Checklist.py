@@ -169,8 +169,8 @@ def buscar_historico_checklists():
         colunas_chk = [col[0] for col in cursor.fetchall()]
 
         if "created_at" in colunas_chk:
-            # Subtrai 3 horas direto no banco caso ele esteja salvando em UTC puro
-            col_data_sql = "c.created_at - INTERVAL '3 hours'"
+            # Mantém o horário correto gerado em Brasília sem subtrair novamente
+            col_data_sql = "c.created_at"
         elif "data" in colunas_chk:
             col_data_sql = "c.data"
         elif "data_criacao" in colunas_chk:
@@ -231,15 +231,9 @@ def buscar_itens_checklist(checklist_id):
 def render():
     st.title("📲 Checklist Diário")
 
-    # Controle de estado para fixar a aba ativa e evitar que retorne ao topo/dashboard
-    if "aba_ativa_checklist" not in st.session_state:
-        st.session_state["aba_ativa_checklist"] = 0
-
-    abas = ["📝 Preencher Checklist", "📊 Histórico & Consultas"]
-    
-    # Como o Streamlit nativo com abas não aceita índice programático direto de forma simples, 
-    # usamos rados ouselectbox controlados, ou mantemos o fluxo seguro por query/session state.
-    tab_novo, tab_historico = st.tabs(abas)
+    tab_novo, tab_historico = st.tabs(
+        ["📝 Preencher Checklist", "📊 Histórico & Consultas"]
+    )
 
     # -------------------------------------------------------------------------
     # ABA 1: FORMULÁRIO DE NOVO CHECKLIST
