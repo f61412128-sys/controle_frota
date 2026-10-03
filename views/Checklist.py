@@ -258,42 +258,6 @@ def render():
         )
         motorista_id = st.session_state.get("motorista_id")
 
-        # Captura automática de GPS em background de forma fluida (sem recarregamentos agressivos)[cite: 9]
-        st.components.v1.html(
-            """
-            <script>
-            if (navigator.geolocation) {
-                const urlParams = new URLSearchParams(window.parent.location.search);
-                if (!urlParams.has('gps_auto')) {
-                    navigator.geolocation.getCurrentPosition(
-                        function(pos) {
-                            const lat = pos.coords.latitude.toFixed(6);
-                            const lon = pos.coords.longitude.toFixed(6);
-                            const coords = lat + "," + lon;
-                            
-                            const url = new URL(window.parent.location);
-                            url.searchParams.set('gps_auto', coords);
-                            window.parent.history.replaceState({}, '', url);
-                        },
-                        function(err) {
-                            const url = new URL(window.parent.location);
-                            url.searchParams.set('gps_auto', 'GPS Não Capturado');
-                            window.parent.history.replaceState({}, '', url);
-                        },
-                        { maximumAge: 0, timeout: 20000, enableHighAccuracy: true }
-                    );
-                }
-            }
-            </script>
-            """,
-            height=0,
-        )
-
-        query_params = st.query_params
-        gps_recebido = query_params.get("gps_auto", None)
-        if gps_recebido:
-            st.session_state["gps_localizacao_atual"] = gps_recebido
-
         with st.form("form_checklist", clear_on_submit=True):
             st.subheader("1. Identificação")
 
@@ -355,16 +319,65 @@ def render():
 
             obs = st.text_area("Observações / Detalhes de problemas")
 
+            # Tratamento de parâmetros de GPS recebidos da sessão / URL[cite: 9]
+            query_params = st.query_params
+            gps_recebido = query_params.get("gps_auto", None)
+            if gps_recebido and gps_recebido != "GPS Não Capturado":
+                st.session_state["gps_localizacao_atual"] = gps_recebido
+
             btn_enviar = st.form_submit_button(
                 "✅ Finalizar e Enviar Checklist", use_container_width=True
             )
 
             if btn_enviar:
-                # Pausa controlada para garantir que o GPS foi capturado ou processado no momento do envio[cite: 9]
-                with st.spinner("📡 Verificando sinal de GPS e salvando o checklist..."):
-                    time.sleep(1.5)  # Dá o respiro necessário para o navegador consolidar a coordenada
-                    loc_final = st.session_state.get("gps_localizacao_atual", "GPS Não Capturado")
-                    foto_bytes = foto.getvalue() if foto is not None else None
+                # Script embarcado diretamente no momento do clique para forçar a busca ativa com tempo estendido de GPS
+                with st.spinner("🛰 Buscando sinal de GPS de alta precisão. Aguarde a localização..."):
+                    st.components.v1.html(
+                        """
+                        <script>
+                        function capturarGPSObrigatorio() {
+                            if (navigator.geolocation) {
+                                navigator.geolocation.getCurrentPosition(
+                                    function(pos) {
+                                        const lat = pos.coords.latitude.toFixed(6);
+                                        const lon = pos.coords.longitude.toFixed(6);
+                                        const coords = lat + "," + lon;
+                                        
+                                        const url = new URL(window.parent.location);
+                                        url.searchParams.set('gps_auto', coords);
+                                        window.parent.history.replaceState({}, '', url);
+                                        window.parent.location.reload();
+                                    },
+                                    function(err) {
+                                        const url = new URL(window.parent.location);
+                                        url.searchParams.set('gps_auto', 'GPS Não Capturado');
+                                        window.parent.history.replaceState({}, '', url);
+                                        window.parent.location.reload();
+                                    },
+                                    { maximumAge: 0, timeout: 30000, enableHighAccuracy: true }
+                                );
+                            } else {
+                                const url = new URL(window.parent.location);
+                                url.searchParams.set('gps_auto', 'GPS Não Suportado');
+                                window.parent.history.replaceState({}, '', url);
+                                window.parent.location.reload();
+                            }
+                        }
+                        
+                        // Executa imediatamente a varredura se ainda não houver dados válidos na URL
+                        const urlParamsCheck = new URLSearchParams(window.parent.location.search);
+                        if (!urlParamsCheck.has('gps_auto') || urlParamsCheck.get('gps_auto') === 'GPS Não Capturado') {
+                            capturarGPSObrigatorio();
+                        }
+                        </script>
+                        """,
+                        height=0,
+                    )
+                    # Tempo de respiro para o navegador processar a geolocalização e recarregar
+                    time.sleep(2.5)
+
+                loc_final = st.session_state.get("gps_localizacao_atual", "GPS Não Capturado")
+                foto_bytes = foto.getvalue() if foto is not None else None
 
                 try:
                     salvar_checklist(
