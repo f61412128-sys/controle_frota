@@ -235,7 +235,7 @@ def render():
     )
 
     # -------------------------------------------------------------------------
-    # ABA 1: FORMULÁRIO DE NOVO CHECKLIST
+    # ABA 1: FORMULÁRIO DE NOVO CHECKLIST (Sem st.form para reter o file_uploader)
     # -------------------------------------------------------------------------
     with tab_novo:
         st.caption("Preencha a inspeção do veículo com atenção.")
@@ -258,126 +258,74 @@ def render():
         )
         motorista_id = st.session_state.get("motorista_id")
 
-        with st.form("form_checklist", clear_on_submit=True):
-            st.subheader("1. Identificação")
+        st.subheader("1. Identificação")
+        veiculo_sel = st.selectbox("Selecione o Veículo*", list(mapa_v.keys()))
+        veiculo_id, km_anterior = mapa_v[veiculo_sel]
 
-            veiculo_sel = st.selectbox("Selecione o Veículo*", list(mapa_v.keys()))
-            veiculo_id, km_anterior = mapa_v[veiculo_sel]
+        tipo_operacao = st.selectbox(
+            "Tipo de Operação*",
+            [
+                "Saída (Retirada do Veículo)",
+                "Entrada (Devolução ao Pátio)",
+            ],
+        )
 
-            tipo_operacao = st.selectbox(
-                "Tipo de Operação*",
-                [
-                    "Saída (Retirada do Veículo)",
-                    "Entrada (Devolução ao Pátio)",
-                ],
+        st.text_input("Responsável pelo Registo", value=usuario_nome, disabled=True)
+
+        km = st.number_input(
+            "Quilometragem Atual (KM)*",
+            min_value=int(km_anterior),
+            value=int(km_anterior),
+        )
+
+        st.divider()
+        st.subheader("2. Inspeção de Itens")
+
+        itens_checklist = [
+            ("Pneus", "Calibragem e Estado Geral"),
+            ("Fluidos", "Nível de Óleo do Motor"),
+            ("Fluidos", "Nível de Água / Radiador"),
+            ("Elétrica", "Faróis e Setas"),
+            ("Elétrica", "Luzes de Freio e Ré"),
+            ("Segurança", "Cinto de Segurança e Espelhos"),
+            ("Estrutura", "Limpeza e Funilaria"),
+        ]
+
+        respostas = {}
+        for cat, item in itens_checklist:
+            respostas[(cat, item)] = st.radio(
+                f"**{item}**",
+                ["OK", "NÃO OK", "N/A"],
+                horizontal=True,
+                key=f"item_{cat}_{item}",
             )
 
-            st.text_input(
-                "Responsável pelo Registo", value=usuario_nome, disabled=True
-            )
+        st.divider()
+        st.subheader("3. Evidências e Observações")
 
-            km = st.number_input(
-                "Quilometragem Atual (KM)*",
-                min_value=int(km_anterior),
-                value=int(km_anterior),
-            )
+        st.write("📸 **Fotografia da Avaria (Opcional)**")
+        st.caption("Tire uma foto na hora ou selecione um ficheiro da galeria.")
+        
+        foto = st.file_uploader(
+            "Carregar ou tirar foto da avaria", 
+            type=["jpg", "jpeg", "png", "heic"], 
+            key="foto_avaria_checklist",
+            label_visibility="collapsed"
+        )
 
-            st.divider()
-            st.subheader("2. Inspeção de Itens")
+        obs = st.text_area("Observações / Detalhes de problemas")
 
-            itens_checklist = [
-                ("Pneus", "Calibragem e Estado Geral"),
-                ("Fluidos", "Nível de Óleo do Motor"),
-                ("Fluidos", "Nível de Água / Radiador"),
-                ("Elétrica", "Faróis e Setas"),
-                ("Elétrica", "Luzes de Freio e Ré"),
-                ("Segurança", "Cinto de Segurança e Espelhos"),
-                ("Estrutura", "Limpeza e Funilaria"),
-            ]
+        # Tratamento de parâmetros de GPS recebidos da sessão / URL
+        query_params = st.query_params
+        gps_recebido = query_params.get("gps_auto", None)
+        if gps_recebido and gps_recebido != "GPS Não Capturado":
+            st.session_state["gps_localizacao_atual"] = gps_recebido
 
-            respostas = {}
-            for cat, item in itens_checklist:
-                respostas[(cat, item)] = st.radio(
-                    f"**{item}**",
-                    ["OK", "NÃO OK", "N/A"],
-                    horizontal=True,
-                    key=f"item_{cat}_{item}",
-                )
-
-            st.divider()
-            st.subheader("3. Evidências e Observações")
-
-            st.write("📸 **Fotografia da Avaria (Opcional)**")
-            st.caption("Tire uma foto na hora ou selecione um ficheiro da galeria.")
-            
-            foto = st.file_uploader(
-                "Carregar ou tirar foto da avaria", 
-                type=["jpg", "jpeg", "png", "heic"], 
-                key="foto_avaria_checklist",
-                label_visibility="collapsed"
-            )
-
-            obs = st.text_area("Observações / Detalhes de problemas")
-
-            # Tratamento de parâmetros de GPS recebidos da sessão / URL[cite: 9]
-            query_params = st.query_params
-            gps_recebido = query_params.get("gps_auto", None)
-            if gps_recebido and gps_recebido != "GPS Não Capturado":
-                st.session_state["gps_localizacao_atual"] = gps_recebido
-
-            btn_enviar = st.form_submit_button(
-                "✅ Finalizar e Enviar Checklist", use_container_width=True
-            )
-
-            if btn_enviar:
-                # Script embarcado diretamente no momento do clique para forçar a busca ativa com tempo estendido de GPS
-                with st.spinner("🛰 Buscando sinal de GPS de alta precisão. Aguarde a localização..."):
-                    st.components.v1.html(
-                        """
-                        <script>
-                        function capturarGPSObrigatorio() {
-                            if (navigator.geolocation) {
-                                navigator.geolocation.getCurrentPosition(
-                                    function(pos) {
-                                        const lat = pos.coords.latitude.toFixed(6);
-                                        const lon = pos.coords.longitude.toFixed(6);
-                                        const coords = lat + "," + lon;
-                                        
-                                        const url = new URL(window.parent.location);
-                                        url.searchParams.set('gps_auto', coords);
-                                        window.parent.history.replaceState({}, '', url);
-                                        window.parent.location.reload();
-                                    },
-                                    function(err) {
-                                        const url = new URL(window.parent.location);
-                                        url.searchParams.set('gps_auto', 'GPS Não Capturado');
-                                        window.parent.history.replaceState({}, '', url);
-                                        window.parent.location.reload();
-                                    },
-                                    { maximumAge: 0, timeout: 30000, enableHighAccuracy: true }
-                                );
-                            } else {
-                                const url = new URL(window.parent.location);
-                                url.searchParams.set('gps_auto', 'GPS Não Suportado');
-                                window.parent.history.replaceState({}, '', url);
-                                window.parent.location.reload();
-                            }
-                        }
-                        
-                        // Executa imediatamente a varredura se ainda não houver dados válidos na URL
-                        const urlParamsCheck = new URLSearchParams(window.parent.location.search);
-                        if (!urlParamsCheck.has('gps_auto') || urlParamsCheck.get('gps_auto') === 'GPS Não Capturado') {
-                            capturarGPSObrigatorio();
-                        }
-                        </script>
-                        """,
-                        height=0,
-                    )
-                    # Tempo de respiro para o navegador processar a geolocalização e recarregar
-                    time.sleep(2.5)
-
-                loc_final = st.session_state.get("gps_localizacao_atual", "GPS Não Capturado")
+        if st.button("✅ Finalizar e Enviar Checklist", use_container_width=True):
+            with st.spinner("🛰 Buscando sinal de GPS de alta precisão e gravando registo..."):
+                # Captura os bytes da imagem antes de qualquer refresh
                 foto_bytes = foto.getvalue() if foto is not None else None
+                loc_final = st.session_state.get("gps_localizacao_atual", "GPS Não Capturado")
 
                 try:
                     salvar_checklist(
