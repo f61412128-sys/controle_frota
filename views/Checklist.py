@@ -169,7 +169,6 @@ def buscar_historico_checklists():
         colunas_chk = [col[0] for col in cursor.fetchall()]
 
         if "created_at" in colunas_chk:
-            # Mantém o horário correto gerado em Brasília sem subtrair novamente
             col_data_sql = "c.created_at"
         elif "data" in colunas_chk:
             col_data_sql = "c.data"
@@ -259,11 +258,7 @@ def render():
         )
         motorista_id = st.session_state.get("motorista_id")
 
-        query_params = st.query_params
-        gps_recebido = query_params.get("gps_auto", None)
-        if gps_recebido and gps_recebido != "GPS Não Capturado":
-            st.session_state["gps_localizacao_atual"] = gps_recebido
-
+        # Captura automática de GPS em background de forma fluida (sem recarregamentos agressivos)[cite: 9]
         st.components.v1.html(
             """
             <script>
@@ -279,14 +274,13 @@ def render():
                             const url = new URL(window.parent.location);
                             url.searchParams.set('gps_auto', coords);
                             window.parent.history.replaceState({}, '', url);
-                            window.parent.location.search = url.search;
                         },
                         function(err) {
                             const url = new URL(window.parent.location);
                             url.searchParams.set('gps_auto', 'GPS Não Capturado');
                             window.parent.history.replaceState({}, '', url);
                         },
-                        { maximumAge: 0, timeout: 15000, enableHighAccuracy: true }
+                        { maximumAge: 0, timeout: 20000, enableHighAccuracy: true }
                     );
                 }
             }
@@ -294,6 +288,11 @@ def render():
             """,
             height=0,
         )
+
+        query_params = st.query_params
+        gps_recebido = query_params.get("gps_auto", None)
+        if gps_recebido:
+            st.session_state["gps_localizacao_atual"] = gps_recebido
 
         with st.form("form_checklist", clear_on_submit=True):
             st.subheader("1. Identificação")
@@ -361,8 +360,11 @@ def render():
             )
 
             if btn_enviar:
-                loc_final = st.session_state.get("gps_localizacao_atual", "GPS Não Capturado")
-                foto_bytes = foto.getvalue() if foto is not None else None
+                # Pausa controlada para garantir que o GPS foi capturado ou processado no momento do envio[cite: 9]
+                with st.spinner("📡 Verificando sinal de GPS e salvando o checklist..."):
+                    time.sleep(1.5)  # Dá o respiro necessário para o navegador consolidar a coordenada
+                    loc_final = st.session_state.get("gps_localizacao_atual", "GPS Não Capturado")
+                    foto_bytes = foto.getvalue() if foto is not None else None
 
                 try:
                     salvar_checklist(
