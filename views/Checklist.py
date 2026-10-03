@@ -9,7 +9,7 @@ from views.services.cadastros_service import listar_motoristas, listar_veiculos
 
 
 def obter_endereco_reverso(lat_lon_str):
-    """Converte coordenadas (latitude, longitude) num endereço legível de forma automática via Nominatim."""
+    """Converte coordenadas (latitude, longitude) num endereço legível completo via Nominatim."""
     try:
         if not lat_lon_str or "," not in lat_lon_str or "Erro" in lat_lon_str or "Não" in lat_lon_str:
             return lat_lon_str
@@ -47,7 +47,7 @@ def salvar_checklist(
     localizacao,
     usuario_responsavel,
 ):
-    # Converte as coordenadas GPS brutas no endereço legível (rua, bairro, etc.)
+    # Converte coordenadas brutas no endereço legível completo (rua, número, bairro, etc.)
     localizacao_amigavel = obter_endereco_reverso(localizacao)
 
     conn = get_connection()
@@ -239,11 +239,57 @@ def render():
         )
         motorista_id = st.session_state.get("motorista_id")
 
-        # Captura coordenadas enviadas via URL de forma automática e silenciosa
+        # Captura parâmetros da URL enviados pelo componente JavaScript de GPS
         query_params = st.query_params
         gps_recebido = query_params.get("gps_auto", None)
         if gps_recebido and gps_recebido != "GPS Não Capturado":
             st.session_state["gps_localizacao_atual"] = gps_recebido
+
+        # Componente elegante e compacto para captação do GPS antes de enviar
+        st.markdown("### 📍 Localização GPS do Veículo")
+        loc_atual_memoria = st.session_state.get("gps_localizacao_atual", "Não capturada")
+        
+        if "No" in loc_atual_memoria or "Erro" in loc_atual_memoria:
+            st.warning("⚠️ Localização ainda não obtida. Toque no botão abaixo antes de finalizar.")
+        else:
+            # Mostra o endereço amigável prévio obtido pelas coordenadas
+            endereco_previo = obter_endereco_reverso(loc_atual_memoria)
+            st.success(f"✅ Localização pronta: {endereco_previo}")
+
+        st.components.v1.html(
+            """
+            <div style="font-family: sans-serif; margin-bottom: 15px;">
+                <button onclick="capturarGPS()" style="background-color: #2b2b2b; color: #00ffcc; border: 1px solid #00ffcc; padding: 10px 16px; font-size: 14px; font-weight: bold; border-radius: 6px; cursor: pointer; width: 100%;">
+                    🛰️️ Obter / Atualizar Localizacão Atual (GPS)
+                </button>
+            </div>
+            <script>
+            function capturarGPS() {
+                if (!navigator.geolocation) {
+                    alert("Geolocalização não suportada neste navegador.");
+                    return;
+                }
+                navigator.geolocation.getCurrentPosition(
+                    function(pos) {
+                        const lat = pos.coords.latitude.toFixed(6);
+                        const lon = pos.coords.longitude.toFixed(6);
+                        const coords = lat + "," + lon;
+                        
+                        const url = new URL(window.parent.location);
+                        url.searchParams.set('gps_auto', coords);
+                        window.parent.history.replaceState({}, '', url);
+                        window.parent.location.reload();
+                    },
+                    function(err) {
+                        alert("Erro ao obter GPS. Verifique se o GPS do telemóvel está ativo.");
+                    },
+                    { maximumAge: 0, timeout: 10000, enableHighAccuracy: true }
+                );
+            }
+            </script>
+            """,
+            height=55,
+        )
 
         with st.form("form_checklist", clear_on_submit=True):
             st.subheader("1. Identificação")
@@ -301,49 +347,7 @@ def render():
 
             obs = st.text_area("Observações / Detalhes de problemas")
 
-            # Script invisível acoplado no formulário que interage com o botão de envio
-            st.components.v1.html(
-                """
-                <script>
-                // Intercepta o clique no botão de envio do Streamlit para capturar a geolocalização em segundo plano
-                document.addEventListener('click', function(e) {
-                    const target = e.target.closest('button');
-                    if (target && target.innerText.includes('Finalizar e Enviar Checklist')) {
-                        if (!window.gpsEnviado && navigator.geolocation) {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            window.gpsEnviado = true;
-
-                            navigator.geolocation.getCurrentPosition(
-                                function(pos) {
-                                    const lat = pos.coords.latitude.toFixed(6);
-                                    const lon = pos.coords.longitude.toFixed(6);
-                                    const coords = lat + "," + lon;
-                                    
-                                    const url = new URL(window.parent.location);
-                                    url.searchParams.set('gps_auto', coords);
-                                    window.parent.history.replaceState({}, '', url);
-                                    
-                                    setTimeout(function() { target.click(); }, 300);
-                                },
-                                function(err) {
-                                    const url = new URL(window.parent.location);
-                                    url.searchParams.set('gps_auto', 'GPS Não Capturado');
-                                    window.parent.history.replaceState({}, '', url);
-                                    
-                                    setTimeout(function() { target.click(); }, 300);
-                                },
-                                { maximumAge: 0, timeout: 5000, enableHighAccuracy: true }
-                            );
-                        }
-                    }
-                }, true);
-                </script>
-                """,
-                height=0,
-            )
-
-            # Botão principal de envio
+            # Botão principal de envio limpo
             btn_enviar = st.form_submit_button(
                 "✅ Finalizar e Enviar Checklist", use_container_width=True
             )
