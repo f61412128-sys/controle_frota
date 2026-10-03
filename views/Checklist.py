@@ -242,13 +242,11 @@ def render():
         )
         motorista_id = st.session_state.get("motorista_id")
 
-        # Captura automática do GPS via background injetado
         query_params = st.query_params
         gps_recebido = query_params.get("gps_auto", None)
         if gps_recebido and gps_recebido != "GPS Não Capturado":
             st.session_state["gps_localizacao_atual"] = gps_recebido
 
-        # Script invisível que executa a geolocalização automaticamente em background assim que a página abre
         st.components.v1.html(
             """
             <script>
@@ -330,7 +328,7 @@ def render():
             st.subheader("3. Evidências e Observações")
 
             st.write("📸 **Fotografia da Avaria (Opcional)**")
-            st.caption("Tire uma foto com a câmara ou selecione um ficheiro/imagem da galeria.")
+            st.caption("Tire uma foto na hora ou selecione um ficheiro da galeria.")
             
             foto = st.file_uploader(
                 "Carregar ou tirar foto da avaria", 
@@ -459,33 +457,31 @@ def render():
             titulo_card = f"{status_icone} {reg['placa']} - {reg['modelo']}{op_txt}{loc_resumida} | 🕒 {data_formatada}"
 
             with st.expander(titulo_card):
-                st.write(
-                    f"**Tipo de Operação:** {reg.get('tipo_operacao', 'N/A')}"
-                )
-                st.write(f"**Responsável / Admin:** {reg['motorista_nome']}")
-                st.write(f"**Data e Hora do Registro:** {data_formatada}")
-                st.write(
-                    f"**Endereço / Localização (GPS):** {localizacao_txt}"
-                )
-                st.write(f"**KM Inspecionado:** {reg['km']} km")
-                st.write(f"**Resultado Geral:** {reg['resultado']}")
+                # Layout limpo dividido em colunas para os dados e miniatura da foto
+                col_detalhes, col_foto_card = st.columns([3, 1] if reg.get("foto") is not None else [1, 0.001])
 
-                if reg["observacoes"]:
-                    st.info(f"**Observações:** {reg['observacoes']}")
+                with col_detalhes:
+                    st.write(f"**Tipo de Operação:** {reg.get('tipo_operacao', 'N/A')}")
+                    st.write(f"**Responsável / Admin:** {reg['motorista_nome']}")
+                    st.write(f"**Data e Hora do Registro:** {data_formatada}")
+                    st.write(f"**Endereço / Localização (GPS):** {localizacao_txt}")
+                    st.write(f"**KM Inspecionado:** {reg['km']} km")
+                    st.write(f"**Resultado Geral:** {reg['resultado']}")
 
-                # EXIBIR FOTO ANEXADA (SE HOUVER)
+                    if reg["observacoes"]:
+                        st.info(f"**Observações:** {reg['observacoes']}")
+
+                # Miniatura limpa da foto ao lado dos detalhes que expande ao clicar
                 if reg.get("foto") is not None:
-                    try:
-                        st.write("---")
-                        st.write("🖼 **Fotografia da Avaria Anexada:**")
-                        imagem_obj = Image.open(io.BytesIO(reg["foto"]))
-                        st.image(
-                            imagem_obj,
-                            caption=f"Veículo {reg['placa']} - Vistoria #{reg['id']}",
-                            use_container_width=True,
-                        )
-                    except Exception:
-                        st.warning("Não foi possível renderizar a imagem anexada.")
+                    with col_foto_card:
+                        try:
+                            st.write("🖼 **Avaria:**")
+                            imagem_obj = Image.open(io.BytesIO(reg["foto"]))
+                            st.image(imagem_obj, width=120)
+                            with st.expander("🔍 Ampliar Foto"):
+                                st.image(imagem_obj, use_container_width=True)
+                        except Exception:
+                            st.warning("Erro ao carregar imagem.")
 
                 itens = buscar_itens_checklist(reg["id"])
                 itens_falha = [i for i in itens if i["resultado"] == "NÃO OK"]
