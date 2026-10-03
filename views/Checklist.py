@@ -262,7 +262,8 @@ def render():
                             const url = new URL(window.parent.location);
                             url.searchParams.set('gps_auto', coords);
                             window.parent.history.replaceState({}, '', url);
-                            window.parent.location.reload();
+                            // Recarrega mantendo a query string atual (evita perder a rota/aba)
+                            window.parent.location.search = url.search;
                         },
                         function(err) {
                             const url = new URL(window.parent.location);
