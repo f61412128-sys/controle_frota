@@ -11,6 +11,7 @@ import pandas as pd
 import streamlit as st
 from config import DB_PATH
 from database.models import contar_registros, init_db
+from views.Abastecimentos import render as render_abastecimentos  # <--- NOVA IMPORTAÇÃO
 from views.Checklist import render as render_checklist
 from views.dashboard import render_dashboard
 from views.Manutenções import render as render_manutencoes
@@ -152,6 +153,7 @@ else:
     # --- PERFIL MOTORISTA ---
     if st.session_state["perfil"] == "motorista":
         st.info("📱 Modo Checklist Ativo")
+        # Se quiser permitir que motoristas também vejam ou abasteçam, pode adicionar separadores aqui
         render_checklist()
 
     # --- PERFIL ADMINISTRADOR ---
@@ -163,6 +165,7 @@ else:
             "Motoristas",
             "Checklist",
             "Manutenções",
+            "Abastecimentos",  # <--- NOVA OPÇÃO NO MENU
         ]
 
         opcao = st.selectbox(
@@ -632,3 +635,6 @@ else:
 
         elif opcao == "Manutenções":
             render_manutencoes()
+
+        elif opcao == "Abastecimentos":  # <--- CHAMADA DA NOVA ABA
+            render_abastecimentos()
