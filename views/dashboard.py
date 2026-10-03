@@ -1,6 +1,8 @@
 import datetime
+import io
 import pandas as pd
 import streamlit as st
+from PIL import Image
 from database.connection import get_connection
 
 
@@ -554,7 +556,7 @@ def render_dashboard(contar_registros_fn=None):
 
     c5, c6, c7, c8 = st.columns(4)
     c5.metric("💰 Custo Manutenções", f"R$ {custo_total_manut:,.2f}")
-    c6.metric("👨‍‍✈️ Motoristas", total_motoristas)
+    c6.metric("👨‍‍‍‍✈️ Motoristas", total_motoristas)
     c7.metric("⚠ Ocorrências", total_ocorrencias)
     c8.metric("📄 Venc. Contratos", total_venc_contratos)
 
@@ -814,23 +816,27 @@ def render_dashboard(contar_registros_fn=None):
                         comprovante_img = ab_row.get(col_comprovante_abast)
                         if comprovante_img is not None:
                             try:
-                                val_comp_str = str(comprovante_img).strip()
-                                if val_comp_str and val_comp_str.lower() not in [
-                                    "none",
-                                    "nan",
-                                    "nat",
-                                    "",
-                                ]:
-                                    data_ab_str = (
-                                        str(ab_row.get(col_data_abast, ""))
-                                        if col_data_abast
-                                        else ""
-                                    )
-                                    st.image(
-                                        comprovante_img,
-                                        caption=f"🧾 Comprovante ({data_ab_str}) - Clique para ampliar",
-                                        width=120,
-                                    )
+                                data_ab_str = (
+                                    str(ab_row.get(col_data_abast, ""))
+                                    if col_data_abast
+                                    else ""
+                                )
+                                if isinstance(comprovante_img, bytes):
+                                    if len(comprovante_img) > 0:
+                                        img_obj = Image.open(io.BytesIO(comprovante_img))
+                                        st.image(
+                                            img_obj,
+                                            caption=f"🧾 Comprovante ({data_ab_str}) - Clique para ampliar",
+                                            width=120,
+                                        )
+                                else:
+                                    val_comp_str = str(comprovante_img).strip()
+                                    if val_comp_str and val_comp_str.lower() not in ["none", "nan", "nat", ""]:
+                                        st.image(
+                                            comprovante_img,
+                                            caption=f"🧾 Comprovante ({data_ab_str}) - Clique para ampliar",
+                                            width=120,
+                                        )
                             except Exception:
                                 pass
 
@@ -1044,18 +1050,22 @@ def render_dashboard(contar_registros_fn=None):
                 # Exibição segura e limpa da foto da ocorrência
                 if foto_oc is not None:
                     try:
-                        val_str = str(foto_oc).strip()
-                        if val_str and val_str.lower() not in [
-                            "none",
-                            "nan",
-                            "nat",
-                            "",
-                        ]:
-                            st.image(
-                                foto_oc,
-                                caption="🔍 Evidência / Foto da Ocorrência - Clique para ampliar",
-                                width=120,
-                            )
+                        if isinstance(foto_oc, bytes):
+                            if len(foto_oc) > 0:
+                                imagem_obj = Image.open(io.BytesIO(foto_oc))
+                                st.image(
+                                    imagem_obj,
+                                    caption="🔍 Evidência / Foto da Ocorrência - Clique para ampliar",
+                                    width=120,
+                                )
+                        else:
+                            val_str = str(foto_oc).strip()
+                            if val_str and val_str.lower() not in ["none", "nan", "nat", ""]:
+                                st.image(
+                                    foto_oc,
+                                    caption="🔍 Evidência / Foto da Ocorrência - Clique para ampliar",
+                                    width=120,
+                                )
                     except Exception:
                         pass
         else:
