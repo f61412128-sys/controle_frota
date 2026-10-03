@@ -1,6 +1,8 @@
 import datetime
+import io
 import pandas as pd
 import streamlit as st
+from PIL import Image
 from database.connection import get_connection
 from views.services.cadastros_service import listar_veiculos
 
@@ -54,7 +56,7 @@ def render():
         veiculo_sel = st.selectbox("Selecione o Veículo*", list(mapa_v.keys()))
         veiculo_id = mapa_v[veiculo_sel]
 
-        usuario = st.session_state.get("usuario_nome", st.session_state.get("usuario", "Administrador"))
+        usuario = st.session_state.get("usuario_nome", st.session_state.get("usuario", "Motorista / Administrador"))
 
         col1, col2 = st.columns(2)
         with col1:
@@ -66,22 +68,35 @@ def render():
 
         st.divider()
         st.subheader("📸 Comprovante / Nota Fiscal")
+        st.caption("Carregue uma imagem ou foto do recibo/cupom fiscal.")
         
-        tipo_envio = st.radio("Método de captura da foto:", ["Tirar Foto com a Câmara", "Carregar Imagem"], horizontal=True)
-        foto_bytes = None
+        foto = st.file_uploader(
+            "Carregar imagem do comprovante", 
+            type=["png", "jpg", "jpeg", "heic"], 
+            key="foto_comprovante_abast",
+            label_visibility="collapsed"
+        )
 
-        if tipo_envio == "Tirar Foto com a Câmara":
-            foto = st.camera_input("Aponte para o comprovante de abastecimento")
-            if foto:
-                foto_bytes = foto.getvalue()
+        # Gestão e pré-visualização segura da imagem no session_state para evitar perda de dados
+        if foto is not None:
+            st.session_state["abastecimento_foto_bytes"] = foto.getvalue()
+            try:
+                img_preview = Image.open(io.BytesIO(st.session_state["abastecimento_foto_bytes"]))
+                st.image(img_preview, caption="🧾 Pré-visualização do Comprovante", width=180)
+            except Exception:
+                pass
         else:
-            foto_arq = st.file_uploader("Carregar imagem do comprovante", type=["png", "jpg", "jpeg"])
-            if foto_arq:
-                foto_bytes = foto_arq.getvalue()
+            if "abastecimento_foto_bytes" not in st.session_state:
+                st.session_state["abastecimento_foto_bytes"] = None
 
         if st.button("✅ Salvar Abastecimento", use_container_width=True):
             try:
+                foto_bytes = st.session_state.get("abastecimento_foto_bytes", None)
                 salvar_abastecimento(veiculo_id, km, litros, valor, foto_bytes, usuario)
+                
+                if "abastecimento_foto_bytes" in st.session_state:
+                    del st.session_state["abastecimento_foto_bytes"]
+
                 st.success("Abastecimento registado com sucesso!")
                 st.rerun()
             except Exception as e:
