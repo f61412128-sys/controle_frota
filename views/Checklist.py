@@ -9,17 +9,9 @@ from views.services.cadastros_service import listar_motoristas, listar_veiculos
 
 
 def obter_endereco_reverso(lat_lon_str):
-    """Converte coordenadas (latitude, longitude) num endereço legível de forma automática."""
+    """Converte coordenadas (latitude, longitude) num endereço legível de forma automática via Nominatim."""
     try:
-        if (
-            not lat_lon_str
-            or "," not in lat_lon_str
-            or "Negado" in lat_lon_str
-            or "Indisponível" in lat_lon_str
-            or "não disponível" in lat_lon_str
-            or "Capturado" in lat_lon_str
-            or "Erro" in lat_lon_str
-        ):
+        if not lat_lon_str or "," not in lat_lon_str or "Erro" in lat_lon_str or "Não" in lat_lon_str:
             return lat_lon_str
 
         partes = lat_lon_str.split(",")
@@ -34,7 +26,7 @@ def obter_endereco_reverso(lat_lon_str):
             url, headers={"User-Agent": "ControleFrotaApp/1.0"}
         )
 
-        with urllib.request.urlopen(req, timeout=4) as response:
+        with urllib.request.urlopen(req, timeout=5) as response:
             data = json.loads(response.read().decode())
             if "display_name" in data:
                 return data["display_name"]
@@ -55,6 +47,7 @@ def salvar_checklist(
     localizacao,
     usuario_responsavel,
 ):
+    # Converte as coordenadas GPS brutas no endereço legível (rua, bairro, etc.)
     localizacao_amigavel = obter_endereco_reverso(localizacao)
 
     conn = get_connection()
@@ -246,7 +239,7 @@ def render():
         )
         motorista_id = st.session_state.get("motorista_id")
 
-        # Captura parâmetros da URL caso o componente JavaScript tenha enviado coordenadas
+        # Captura coordenadas enviadas via URL de forma automática e silenciosa
         query_params = st.query_params
         gps_recebido = query_params.get("gps_auto", None)
         if gps_recebido and gps_recebido != "GPS Não Capturado":
@@ -308,11 +301,47 @@ def render():
 
             obs = st.text_area("Observações / Detalhes de problemas")
 
-            # Exibe status atual da localização no formulário
-            loc_atual = st.session_state.get(
-                "gps_localizacao_atual", "Não capturada ainda"
+            # Script invisível acoplado no formulário que interage com o botão de envio
+            st.components.v1.html(
+                """
+                <script>
+                // Intercepta o clique no botão de envio do Streamlit para capturar a geolocalização em segundo plano
+                document.addEventListener('click', function(e) {
+                    const target = e.target.closest('button');
+                    if (target && target.innerText.includes('Finalizar e Enviar Checklist')) {
+                        if (!window.gpsEnviado && navigator.geolocation) {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            window.gpsEnviado = true;
+
+                            navigator.geolocation.getCurrentPosition(
+                                function(pos) {
+                                    const lat = pos.coords.latitude.toFixed(6);
+                                    const lon = pos.coords.longitude.toFixed(6);
+                                    const coords = lat + "," + lon;
+                                    
+                                    const url = new URL(window.parent.location);
+                                    url.searchParams.set('gps_auto', coords);
+                                    window.parent.history.replaceState({}, '', url);
+                                    
+                                    setTimeout(function() { target.click(); }, 300);
+                                },
+                                function(err) {
+                                    const url = new URL(window.parent.location);
+                                    url.searchParams.set('gps_auto', 'GPS Não Capturado');
+                                    window.parent.history.replaceState({}, '', url);
+                                    
+                                    setTimeout(function() { target.click(); }, 300);
+                                },
+                                { maximumAge: 0, timeout: 5000, enableHighAccuracy: true }
+                            );
+                        }
+                    }
+                }, true);
+                </script>
+                """,
+                height=0,
             )
-            st.markdown(f"📍 **Localização GPS na Memória:** `{loc_atual}`")
 
             # Botão principal de envio
             btn_enviar = st.form_submit_button(
@@ -337,7 +366,6 @@ def render():
                         loc_final,
                         usuario_nome,
                     )
-                    # Limpa o GPS da sessão para o próximo checklist
                     if "gps_localizacao_atual" in st.session_state:
                         del st.session_state["gps_localizacao_atual"]
 
@@ -346,65 +374,6 @@ def render():
                     st.rerun()
                 except Exception as e:
                     st.error(f"Erro ao salvar checklist: {e}")
-
-        # Botão HTML interativo posicionado de forma limpa abaixo do formulário para capturar o GPS via toque direto
-        st.markdown("---")
-        st.markdown(
-            "### 🛰️ Captura Automática de Localização (Toque Obrigatório no Telemóvel)"
-        )
-        st.components.v1.html(
-            """
-            <div style="font-family: sans-serif; text-align: center;">
-                <button onclick="capturarGPS()" style="background-color: #ff4b4b; color: white; border: none; padding: 12px 20px; font-size: 16px; font-weight: bold; border-radius: 8px; cursor: pointer; width: 100%; box-shadow: 0 4px 6px rgba(0,0,0,0.3);">
-                    🎯 CLIQUE AQUI PARA CAPTURAR O GPS AGORA
-                </button>
-                <p id="status-gps" style="color: #aaa; font-size: 13px; margin-top: 8px;">Aguardando clique para detetar coordenadas...</p>
-            </div>
-            <script>
-            function capturarGPS() {
-                const statusEl = document.getElementById('status-gps');
-                if (!navigator.geolocation) {
-                    statusEl.innerHTML = "❌ O seu navegador não suporta geolocalização.";
-                    statusEl.style.color = "#ff4444";
-                    return;
-                }
-                statusEl.innerHTML = "⏳ A contactar os satélites GPS do telemóvel...";
-                statusEl.style.color = "#ffbb00";
-
-                navigator.geolocation.getCurrentPosition(
-                    function(pos) {
-                        const lat = pos.coords.latitude.toFixed(6);
-                        const lon = pos.coords.longitude.toFixed(6);
-                        const coords = lat + "," + lon;
-                        
-                        statusEl.innerHTML = "✅ GPS Capturado com Sucesso: " + coords;
-                        statusEl.style.color = "#00ffcc";
-                        
-                        // Atualiza a URL para o Streamlit capturar
-                        const url = new URL(window.parent.location);
-                        url.searchParams.set('gps_auto', coords);
-                        window.parent.history.replaceState({}, '', url);
-                    },
-                    function(err) {
-                        let motivo = "Erro desconhecido";
-                        if(err.code === 1) motivo = "Permissão Negada (Ative o GPS nas definições do telemóvel)";
-                        if(err.code === 2) motivo = "Posição Indisponível (Sem sinal)";
-                        if(err.code === 3) motivo = "Timeout (Demorou muito)";
-                        
-                        statusEl.innerHTML = "❌ Falha: " + motivo;
-                        statusEl.style.color = "#ff4444";
-                        
-                        const url = new URL(window.parent.location);
-                        url.searchParams.set('gps_auto', 'Erro: ' + motivo);
-                        window.parent.history.replaceState({}, '', url);
-                    },
-                    { maximumAge: 0, timeout: 10000, enableHighAccuracy: true }
-                );
-            }
-            </script>
-            """,
-            height=110,
-        )
 
     # -------------------------------------------------------------------------
     # ABA 2: HISTÓRICO DE REGISTROS
