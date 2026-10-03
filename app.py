@@ -152,8 +152,22 @@ else:
 
     # --- PERFIL MOTORISTA ---
     if st.session_state["perfil"] == "motorista":
-        st.info("📱 Modo Checklist Ativo")
-        render_checklist()
+        st.info("📱 Área do Motorista")
+        
+        # Permite alternar entre os módulos permitidos para o motorista
+        modulo_motorista = st.radio(
+            "Selecione a Ação:",
+            ["Checklist", "Abastecimentos"],
+            horizontal=True,
+            label_visibility="collapsed"
+        )
+        
+        st.markdown("---")
+        
+        if modulo_motorista == "Checklist":
+            render_checklist()
+        else:
+            render_abastecimentos()
 
     # --- PERFIL ADMINISTRADOR ---
     elif st.session_state["perfil"] == "admin":
