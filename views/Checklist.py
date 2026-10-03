@@ -47,7 +47,6 @@ def salvar_checklist(
     localizacao,
     usuario_responsavel,
 ):
-    # Converte coordenadas brutas no endereço legível completo (rua, número, bairro, etc.)
     localizacao_amigavel = obter_endereco_reverso(localizacao)
 
     conn = get_connection()
@@ -239,57 +238,10 @@ def render():
         )
         motorista_id = st.session_state.get("motorista_id")
 
-        # Captura parâmetros da URL enviados pelo componente JavaScript de GPS
         query_params = st.query_params
         gps_recebido = query_params.get("gps_auto", None)
         if gps_recebido and gps_recebido != "GPS Não Capturado":
             st.session_state["gps_localizacao_atual"] = gps_recebido
-
-        # Componente elegante e compacto para captação do GPS antes de enviar
-        st.markdown("### 📍 Localização GPS do Veículo")
-        loc_atual_memoria = st.session_state.get("gps_localizacao_atual", "Não capturada")
-        
-        if "No" in loc_atual_memoria or "Erro" in loc_atual_memoria:
-            st.warning("⚠️ Localização ainda não obtida. Toque no botão abaixo antes de finalizar.")
-        else:
-            # Mostra o endereço amigável prévio obtido pelas coordenadas
-            endereco_previo = obter_endereco_reverso(loc_atual_memoria)
-            st.success(f"✅ Localização pronta: {endereco_previo}")
-
-        st.components.v1.html(
-            """
-            <div style="font-family: sans-serif; margin-bottom: 15px;">
-                <button onclick="capturarGPS()" style="background-color: #2b2b2b; color: #00ffcc; border: 1px solid #00ffcc; padding: 10px 16px; font-size: 14px; font-weight: bold; border-radius: 6px; cursor: pointer; width: 100%;">
-                    🛰️️ Obter / Atualizar Localizacão Atual (GPS)
-                </button>
-            </div>
-            <script>
-            function capturarGPS() {
-                if (!navigator.geolocation) {
-                    alert("Geolocalização não suportada neste navegador.");
-                    return;
-                }
-                navigator.geolocation.getCurrentPosition(
-                    function(pos) {
-                        const lat = pos.coords.latitude.toFixed(6);
-                        const lon = pos.coords.longitude.toFixed(6);
-                        const coords = lat + "," + lon;
-                        
-                        const url = new URL(window.parent.location);
-                        url.searchParams.set('gps_auto', coords);
-                        window.parent.history.replaceState({}, '', url);
-                        window.parent.location.reload();
-                    },
-                    function(err) {
-                        alert("Erro ao obter GPS. Verifique se o GPS do telemóvel está ativo.");
-                    },
-                    { maximumAge: 0, timeout: 10000, enableHighAccuracy: true }
-                );
-            }
-            </script>
-            """,
-            height=55,
-        )
 
         with st.form("form_checklist", clear_on_submit=True):
             st.subheader("1. Identificação")
@@ -313,6 +265,46 @@ def render():
                 "Quilometragem Atual (KM)*",
                 min_value=int(km_anterior),
                 value=int(km_anterior),
+            )
+
+            # Botão subtil e integrado dentro do próprio bloco do formulário
+            st.markdown("---")
+            loc_atual_memoria = st.session_state.get("gps_localizacao_atual", "Pendente")
+            status_gps_txt = "📍 GPS Ativo e Pronto" if "," in loc_atual_memoria and "Erro" not in loc_atual_memoria else "📍 Toque para Capturar GPS"
+            
+            st.components.v1.html(
+                f"""
+                <div style="font-family: sans-serif; margin: 5px 0;">
+                    <button type="button" onclick="capturarGPS()" style="background-color: #1e1e1e; color: #00ffcc; border: 1px dashed #00ffcc; padding: 8px 12px; font-size: 13px; font-weight: bold; border-radius: 6px; cursor: pointer; width: 100%;">
+                        {status_gps_txt}
+                    </button>
+                </div>
+                <script>
+                function capturarGPS() {{
+                    if (!navigator.geolocation) {{
+                        alert("Geolocalização não suportada.");
+                        return;
+                    }}
+                    navigator.geolocation.getCurrentPosition(
+                        function(pos) {{
+                            const lat = pos.coords.latitude.toFixed(6);
+                            const lon = pos.coords.longitude.toFixed(6);
+                            const coords = lat + "," + lon;
+                            
+                            const url = new URL(window.parent.location);
+                            url.searchParams.set('gps_auto', coords);
+                            window.parent.history.replaceState({{}}, '', url);
+                            window.parent.location.reload();
+                        }},
+                        function(err) {{
+                            alert("Não foi possível obter a localização. Verifique as permissões.");
+                        }},
+                        {{ maximumAge: 0, timeout: 10000, enableHighAccuracy: true }}
+                    );
+                }}
+                </script>
+                """,
+                height=45,
             )
 
             st.divider()
@@ -347,7 +339,6 @@ def render():
 
             obs = st.text_area("Observações / Detalhes de problemas")
 
-            # Botão principal de envio limpo
             btn_enviar = st.form_submit_button(
                 "✅ Finalizar e Enviar Checklist", use_container_width=True
             )
