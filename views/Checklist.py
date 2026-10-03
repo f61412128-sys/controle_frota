@@ -1,7 +1,9 @@
 import datetime
+import io
 import json
 import time
 import urllib.request
+from PIL import Image
 import pandas as pd
 import streamlit as st
 from database.connection import get_connection
@@ -162,6 +164,7 @@ def buscar_historico_checklists():
         col_loc_sql = "c.localizacao" if "localizacao" in colunas_chk else "'' AS localizacao"
         col_op_sql = "c.tipo_operacao" if "tipo_operacao" in colunas_chk else "'Saída (Retirada do Veículo)' AS tipo_operacao"
         col_resp_sql = "c.usuario_responsavel" if "usuario_responsavel" in colunas_chk else "NULL AS usuario_responsavel"
+        col_foto_sql = "c.foto" if "foto" in colunas_chk else "NULL AS foto"
 
         query = f"""
             SELECT 
@@ -173,6 +176,7 @@ def buscar_historico_checklists():
                 {col_loc_sql},
                 {col_op_sql},
                 {col_resp_sql},
+                {col_foto_sql},
                 v.placa,
                 v.modelo,
                 COALESCE(c.usuario_responsavel, m.nome, u.nome, 'Administrador') AS motorista_nome
@@ -338,7 +342,6 @@ def render():
             )
 
             if btn_enviar:
-                # O GPS já foi capturado silenciosamente em background e está guardado na sessão
                 loc_final = st.session_state.get("gps_localizacao_atual", "GPS Não Capturado")
                 foto_bytes = foto.getvalue() if foto else None
 
@@ -403,7 +406,7 @@ def render():
                 "Filtrar por Veículo", lista_veiculos_filtro
             )
         with col_f2:
-            apenas_pendencias = st.checkbox("⚠️ Apenas com Pendências")
+            apenas_pendencias = st.checkbox("⚠️️ Apenas com Pendências")
 
         registros_filtrados = registros
         if filtro_veiculo != "Todos":
@@ -465,6 +468,20 @@ def render():
 
                 if reg["observacoes"]:
                     st.info(f"**Observações:** {reg['observacoes']}")
+
+                # EXIBIR FOTO ANEXADA (SE HOUVER)
+                if reg.get("foto") is not None:
+                    try:
+                        st.write("---")
+                        st.write("🖼 **Fotografia da Avaria Anexada:**")
+                        imagem_obj = Image.open(io.BytesIO(reg["foto"]))
+                        st.image(
+                            imagem_obj,
+                            caption=f"Veículo {reg['placa']} - Vistoria #{reg['id']}",
+                            use_container_width=True,
+                        )
+                    except Exception:
+                        st.warning("Não foi possível renderizar a imagem anexada.")
 
                 itens = buscar_itens_checklist(reg["id"])
                 itens_falha = [i for i in itens if i["resultado"] == "NÃO OK"]
