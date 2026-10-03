@@ -6,7 +6,8 @@ import urllib.request
 from PIL import Image
 import pandas as pd
 import streamlit as st
-import psycopg2.extras # Importante para garantir o tratamento binário correto
+import streamlit.components.v1 as components
+import psycopg2.extras
 from database.connection import get_connection
 from views.services.cadastros_service import listar_motoristas, listar_veiculos
 
@@ -244,6 +245,37 @@ def render():
     with tab_novo:
         st.caption("Preencha a inspeção do veículo com atenção.")
 
+        # Script invisível para captura automática de GPS em segundo plano (sem botão dedicado)
+        components.html("""
+            <script>
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(
+                    function(position) {
+                        const lat = position.coords.latitude;
+                        const lon = position.coords.longitude;
+                        const coords = lat + "," + lon;
+                        const urlParams = new URLSearchParams(window.location.search);
+                        if (urlParams.get('gps_auto') !== coords) {
+                            urlParams.set('gps_auto', coords);
+                            const newUrl = window.location.pathname + '?' + urlParams.toString();
+                            window.history.replaceState({}, '', newUrl);
+                        }
+                    },
+                    function(error) {
+                        console.log("Erro no GPS: ", error.message);
+                    },
+                    { timeout: 10000, enableHighAccuracy: true }
+                );
+            }
+            </script>
+        """, height=0)
+
+        # Captura o parâmetro de GPS inserido pelo script JS na URL
+        query_params = st.query_params
+        gps_recebido = query_params.get("gps_auto", None)
+        if gps_recebido and gps_recebido != "GPS Não Capturado":
+            st.session_state["gps_localizacao_atual"] = gps_recebido
+
         veiculos = listar_veiculos()
 
         if not veiculos:
@@ -331,14 +363,8 @@ def render():
 
         obs = st.text_area("Observações / Detalhes de problemas")
 
-        # Tratamento de parâmetros de GPS recebidos da sessão / URL
-        query_params = st.query_params
-        gps_recebido = query_params.get("gps_auto", None)
-        if gps_recebido and gps_recebido != "GPS Não Capturado":
-            st.session_state["gps_localizacao_atual"] = gps_recebido
-
         if st.button("✅ Finalizar e Enviar Checklist", use_container_width=True):
-            with st.spinner("🛰 Buscando sinal de GPS de alta precisão e gravando registo..."):
+            with st.spinner("🛰 Consolidando dados de GPS e gravando registo..."):
                 foto_bytes = st.session_state.get("checklist_foto_bytes", None)
                 loc_final = st.session_state.get("gps_localizacao_atual", "GPS Não Capturado")
 
