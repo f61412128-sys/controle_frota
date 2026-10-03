@@ -150,16 +150,53 @@ def render_dashboard(contar_registros_fn=None):
         else pd.DataFrame()
     )
 
-    # Carregar dados de ocorrências com LEFT JOIN em checklists e veiculos
+    # Carregar dados de ocorrências verificando dinamicamente a foto em ocorrencias e checklists
     df_ocorrencias = pd.DataFrame()
     if "ocorrencias" in tabelas_existentes:
-        query_ocorr = """
-            SELECT o.*, c.foto, v.placa, v.modelo 
-            FROM ocorrencias o
-            LEFT JOIN checklists c ON o.checklist_id = c.id
-            LEFT JOIN veiculos v ON o.veiculo_id = v.id
-            ORDER BY o.id DESC
-        """
+        df_oc_cols = ler_tabela_direta("SELECT * FROM ocorrencias LIMIT 0")
+        cols_oc = df_oc_cols.columns.tolist() if not df_oc_cols.empty else []
+
+        foto_oc_col = next(
+            (
+                c
+                for c in ["foto", "imagem", "comprovante", "anexo"]
+                if c in cols_oc
+            ),
+            None,
+        )
+        has_chk_id = "checklist_id" in cols_oc
+        has_chk_table = "checklists" in tabelas_existentes
+
+        if foto_oc_col and has_chk_id and has_chk_table:
+            query_ocorr = f"""
+                SELECT o.*, COALESCE(o.{foto_oc_col}, c.foto) as foto, v.placa, v.modelo 
+                FROM ocorrencias o
+                LEFT JOIN checklists c ON o.checklist_id = c.id
+                LEFT JOIN veiculos v ON o.veiculo_id = v.id
+                ORDER BY o.id DESC
+            """
+        elif foto_oc_col:
+            query_ocorr = f"""
+                SELECT o.*, o.{foto_oc_col} as foto, v.placa, v.modelo 
+                FROM ocorrencias o
+                LEFT JOIN veiculos v ON o.veiculo_id = v.id
+                ORDER BY o.id DESC
+            """
+        elif has_chk_id and has_chk_table:
+            query_ocorr = """
+                SELECT o.*, c.foto as foto, v.placa, v.modelo 
+                FROM ocorrencias o
+                LEFT JOIN checklists c ON o.checklist_id = c.id
+                LEFT JOIN veiculos v ON o.veiculo_id = v.id
+                ORDER BY o.id DESC
+            """
+        else:
+            query_ocorr = """
+                SELECT o.*, v.placa, v.modelo 
+                FROM ocorrencias o
+                LEFT JOIN veiculos v ON o.veiculo_id = v.id
+                ORDER BY o.id DESC
+            """
         df_ocorrencias = ler_tabela_direta(query_ocorr)
     else:
         for t_oc in ["ocorrencia", "incidentes", "problemas"]:
@@ -517,7 +554,7 @@ def render_dashboard(contar_registros_fn=None):
 
     c5, c6, c7, c8 = st.columns(4)
     c5.metric("💰 Custo Manutenções", f"R$ {custo_total_manut:,.2f}")
-    c6.metric("👨‍✈️ Motoristas", total_motoristas)
+    c6.metric("👨‍‍✈️ Motoristas", total_motoristas)
     c7.metric("⚠ Ocorrências", total_ocorrencias)
     c8.metric("📄 Venc. Contratos", total_venc_contratos)
 
@@ -791,7 +828,7 @@ def render_dashboard(contar_registros_fn=None):
                                     )
                                     st.image(
                                         comprovante_img,
-                                        caption=f"🧾 Comprovante Abastecimiento ({data_ab_str}) - Clique para ampliar",
+                                        caption=f"🧾 Comprovante ({data_ab_str}) - Clique para ampliar",
                                         width=120,
                                     )
                             except Exception:
