@@ -18,6 +18,7 @@ def obter_endereco_reverso(lat_lon_str):
             or "Indisponível" in lat_lon_str
             or "não disponível" in lat_lon_str
             or "Capturado" in lat_lon_str
+            or "Erro" in lat_lon_str
         ):
             return lat_lon_str
 
@@ -246,48 +247,77 @@ def render():
         )
         motorista_id = st.session_state.get("motorista_id")
 
-        # Componente JavaScript inteligente ligado diretamente ao botão nativo do Streamlit
+        # Componente JavaScript de Diagnóstico Inteligente Integrado no Botão
         st.components.v1.html(
             """
+            <div id="gps-status-box" style="font-family: sans-serif; font-size: 12px; background: #1e1e1e; color: #00ffcc; padding: 8px 12px; border-radius: 6px; margin-bottom: 10px; border: 1px solid #333;">
+                📍 Status GPS: <b>Aguardando clique no envio...</b>
+            </div>
             <script>
-            // Intercepta o clique no botão de envio dentro da estrutura do Streamlit
+            function setStatusMsg(msg, color="#00ffcc") {
+                const box = document.getElementById('gps-status-box');
+                if(box) {
+                    box.innerHTML = '📍 Status GPS: <span style="color:' + color + ';">' + msg + '</span>';
+                }
+            }
+
             document.addEventListener('click', function(e) {
                 const target = e.target.closest('button');
                 if (target && target.innerText.includes('Finalizar e Enviar Checklist')) {
-                    // Evita o envio imediato por 1 segundo para dar tempo ao GPS de responder
-                    if (!window.gpsCapturado && navigator.geolocation) {
+                    if (!window.gpsCapturado) {
                         e.preventDefault();
                         e.stopPropagation();
                         
+                        if (!navigator.geolocation) {
+                            setStatusMsg("Erro: Navegador não suporta Geolocalização", "#ff4444");
+                            const url = new URL(window.parent.location);
+                            url.searchParams.set('gps_auto', 'Erro: Sem suporte GPS');
+                            window.parent.history.replaceState({}, '', url);
+                            window.gpsCapturado = true;
+                            target.click();
+                            return;
+                        }
+
+                        setStatusMsg("A solicitar permissão e coordenadas ao telemóvel...", "#ffbb00");
+
                         navigator.geolocation.getCurrentPosition(
                             function(pos) {
                                 const lat = pos.coords.latitude.toFixed(6);
                                 const lon = pos.coords.longitude.toFixed(6);
                                 const coords = lat + "," + lon;
                                 
+                                setStatusMsg("Sucesso! Coordenadas: " + coords, "#00ff00");
+                                
                                 const url = new URL(window.parent.location);
                                 url.searchParams.set('gps_auto', coords);
                                 window.parent.history.replaceState({}, '', url);
                                 
                                 window.gpsCapturado = true;
-                                target.click();
+                                setTimeout(function() { target.click(); }, 400);
                             },
                             function(err) {
+                                let motivo = "Erro desconhecido";
+                                if(err.code === 1) motivo = "Permissão Negada pelo Utilizador";
+                                if(err.code === 2) motivo = "Posição Indisponível (Sem sinal GPS)";
+                                if(err.code === 3) motivo = "Timeout (Demorou muito a responder)";
+                                
+                                setStatusMsg("Falha: " + motivo + " (Código: " + err.code + ")", "#ff4444");
+                                
                                 const url = new URL(window.parent.location);
-                                url.searchParams.set('gps_auto', 'GPS Negado ou Indisponível');
+                                url.searchParams.set('gps_auto', 'Erro GPS: ' + motivo);
                                 window.parent.history.replaceState({}, '', url);
                                 
                                 window.gpsCapturado = true;
-                                target.click();
+                                setTimeout(function() { target.click(); }, 1000);
                             },
-                            { maximumAge: 0, timeout: 6000, enableHighAccuracy: true }
+                            { maximumAge: 0, timeout: 8000, enableHighAccuracy: true }
                         );
                     }
                 }
             }, true);
             </script>
             """,
-            height=0,
+            height=50,
         )
 
         with st.form("form_checklist", clear_on_submit=True):
@@ -354,7 +384,7 @@ def render():
             if btn_enviar:
                 foto_bytes = foto.getvalue() if foto else None
                 
-                # Resgata o GPS capturado no instante do clique
+                # Resgata o diagnóstico exato capturado no instante do clique
                 loc_final = st.query_params.get("gps_auto", "GPS Não Capturado")
 
                 try:
