@@ -70,7 +70,7 @@ def render_cards_veiculos_estilizados(df_veiculos):
         endereco_chk = row.get('ultimo_endereco', 'Não informado')
         
         if status_disp == 'Disponível':
-            badge_html = '<span class="badge-disponivel">🟢 Disponível (No Pátio)</span>'
+            badge_html = '<span class="badge-disponivel">🟢 Disponível </span>'
         else:
             badge_html = '<span class="badge-indisponivel">🔴 Em Uso / Indisponível</span>'
 
