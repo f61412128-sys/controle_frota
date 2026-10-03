@@ -238,7 +238,7 @@ def render():
         )
         motorista_id = st.session_state.get("motorista_id")
 
-        # Captura o parâmetro de GPS se vier preenchido de forma oculta
+        # Verifica se o GPS foi injetado via parâmetro oculto pelo navegador
         query_params = st.query_params
         gps_recebido = query_params.get("gps_auto", None)
         if gps_recebido and gps_recebido != "GPS Não Capturado":
@@ -300,15 +300,54 @@ def render():
 
             obs = st.text_area("Observações / Detalhes de problemas")
 
-            # Script invisível acoplado que intercepta o clique do botão de envio,
-            # força a leitura rápida do GPS do telemóvel e só depois submete.
+            # Script invisível inteligente: intercepta o clique do botão de envio nativo,
+            # força a captura do GPS do telemóvel e só recarrega a página após obter os dados.
             st.components.v1.html(
                 """
                 <script>
-                // Aguarda o documento carregar
-                document.addEventListener("DOMContentLoaded", function() {
-                    // Procura o botão de submit do Streamlit dentro do formulário
+                // Executa assim que a página carrega para monitorar o botão de envio
+                const observer = new MutationObserver(function(mutations, obs) {
+                    const buttons = window.parent.document.querySelectorAll('button');
+                    buttons.forEach(btn => {
+                        if (btn.innerText.includes('Finalizar e Enviar Checklist') && !btn.dataset.gpsHooked) {
+                            btn.dataset.gpsHooked = "true";
+                            btn.addEventListener('click', function(e) {
+                                // Se ainda não temos o GPS na URL, interceptamos o clique temporariamente
+                                const urlParams = new URLSearchParams(window.parent.location.search);
+                                if (!urlParams.has('gps_auto')) {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    
+                                    if (navigator.geolocation) {
+                                        // Mostra um aviso discreto no topo do formulário
+                                        navigator.geolocation.getCurrentPosition(
+                                            function(pos) {
+                                                const lat = pos.coords.latitude.toFixed(6);
+                                                const lon = pos.coords.longitude.toFixed(6);
+                                                const coords = lat + "," + lon;
+                                                
+                                                const url = new URL(window.parent.location);
+                                                url.searchParams.set('gps_auto', coords);
+                                                window.parent.history.replaceState({}, '', url);
+                                                // Simula o clique novamente agora com o GPS garantido
+                                                btn.click();
+                                            },
+                                            function(err) {
+                                                // Se o utilizador negar ou falhar, prossegue sem GPS para não travar o app
+                                                const url = new URL(window.parent.location);
+                                                url.searchParams.set('gps_auto', 'GPS Não Capturado');
+                                                window.parent.history.replaceState({}, '', url);
+                                                btn.click();
+                                            },
+                                            { maximumAge: 0, timeout: 10000, enableHighAccuracy: true }
+                                        );
+                                    }
+                                }
+                            }, true);
+                        }
+                    });
                 });
+                observer.observe(window.parent.document.body, { childList: true, subtree: true });
                 </script>
                 """,
                 height=0,
@@ -319,16 +358,12 @@ def render():
             )
 
             if btn_enviar:
-                # Se o GPS ainda não estiver em memória, tentamos dar uma pequena pausa 
-                # e verificar se o parâmetro de geolocalização foi injetado pelo navegador.
-                loc_final = st.session_state.get("gps_localizacao_atual", "")
-                
-                if not loc_final or loc_final == "GPS Não Capturado":
-                    # Pequeno aviso visual de travadinha de segurança para aguardar o sensor
-                    with st.spinner("🛰 A capturar localização GPS do dispositivo..."):
-                        time.sleep(1.5)
-                        loc_final = st.session_state.get("gps_localizacao_atual", "GPS Não Capturado")
-
+                # Dá uma pequena pausa nativa caso o script esteja a injetar o GPS neste exato milissegundo
+                if not st.session_state.get("gps_localizacao_atual"):
+                    with st.spinner("🛰️ Obtendo geolocalização exata do dispositivo..."):
+                        time.sleep(1.2)
+                        
+                loc_final = st.session_state.get("gps_localizacao_atual", "GPS Não Capturado")
                 foto_bytes = foto.getvalue() if foto else None
 
                 try:
