@@ -150,7 +150,7 @@ def render_dashboard(contar_registros_fn=None):
         else pd.DataFrame()
     )
 
-    # Carregar dados de ocorrências com LEFT JOIN em checklists e veiculos para puxar a foto e dados do veículo
+    # Carregar dados de ocorrências com LEFT JOIN em checklists e veiculos
     df_ocorrencias = pd.DataFrame()
     if "ocorrencias" in tabelas_existentes:
         query_ocorr = """
@@ -413,7 +413,6 @@ def render_dashboard(contar_registros_fn=None):
                 except Exception:
                     pass
 
-    # Contagem de contratos vencidos/a vencer
     total_venc_contratos = 0
     df_contratos = pd.DataFrame()
     for t_c in [
@@ -559,6 +558,7 @@ def render_dashboard(contar_registros_fn=None):
         col_data_abast = None
         col_valor_abast = None
         col_litros_abast = None
+        col_comprovante_abast = None
 
         if not df_abastecimentos.empty:
             col_data_abast = next(
@@ -595,6 +595,20 @@ def render_dashboard(contar_registros_fn=None):
                         "quantidade",
                         "qtd_litros",
                         "volume",
+                    ]
+                    if c in df_abastecimentos.columns
+                ),
+                None,
+            )
+            col_comprovante_abast = next(
+                (
+                    c
+                    for c in [
+                        "comprovante",
+                        "foto",
+                        "recibo",
+                        "imagem",
+                        "arquivo",
                     ]
                     if c in df_abastecimentos.columns
                 ),
@@ -688,6 +702,7 @@ def render_dashboard(contar_registros_fn=None):
                 gasto_veiculo = 0.0
                 litros_veiculo = 0.0
                 km_percorrido = "Não registado"
+                df_abast_v = pd.DataFrame()
 
                 if not df_abastecimentos.empty:
                     v_id = row.get("id")
@@ -755,6 +770,32 @@ def render_dashboard(contar_registros_fn=None):
                 """,
                     unsafe_allow_html=True,
                 )
+
+                # Exibir comprovantes de abastecimento de forma limpa, pequena e expansível
+                if not df_abast_v.empty and col_comprovante_abast:
+                    for _, ab_row in df_abast_v.iterrows():
+                        comprovante_img = ab_row.get(col_comprovante_abast)
+                        if comprovante_img is not None:
+                            try:
+                                val_comp_str = str(comprovante_img).strip()
+                                if val_comp_str and val_comp_str.lower() not in [
+                                    "none",
+                                    "nan",
+                                    "nat",
+                                    "",
+                                ]:
+                                    data_ab_str = (
+                                        str(ab_row.get(col_data_abast, ""))
+                                        if col_data_abast
+                                        else ""
+                                    )
+                                    st.image(
+                                        comprovante_img,
+                                        caption=f"🧾 Comprovante Abastecimiento ({data_ab_str}) - Clique para ampliar",
+                                        width=120,
+                                    )
+                            except Exception:
+                                pass
 
     with tab_rodizio:
         st.markdown("##### 🚘 Consulta de Rodízio de Veículos (SP)")
@@ -943,10 +984,12 @@ def render_dashboard(contar_registros_fn=None):
                 oc_status = row.get("status", "Pendente")
                 oc_data = row.get("data", row.get("created_at", "N/A"))
                 oc_resp = row.get("responsavel", row.get("motorista", "N/A"))
-                
+
                 placa_oc = row.get("placa", "")
                 modelo_oc = row.get("modelo", "")
-                veiculo_info = f" - {placa_oc} ({modelo_oc})" if placa_oc else ""
+                veiculo_info = (
+                    f" - {placa_oc} ({modelo_oc})" if placa_oc else ""
+                )
                 foto_oc = row.get("foto", None)
 
                 st.markdown(
@@ -961,10 +1004,21 @@ def render_dashboard(contar_registros_fn=None):
                     unsafe_allow_html=True,
                 )
 
-                # Exibir a foto do checklist se estiver disponível
-                if foto_oc and pd.notna(foto_oc) and str(foto_oc).strip() not in ["", "None", "nan"]:
+                # Exibição segura e limpa da foto da ocorrência
+                if foto_oc is not None:
                     try:
-                        st.image(foto_oc, caption=f"Evidência / Foto da Ocorrência", width=350)
+                        val_str = str(foto_oc).strip()
+                        if val_str and val_str.lower() not in [
+                            "none",
+                            "nan",
+                            "nat",
+                            "",
+                        ]:
+                            st.image(
+                                foto_oc,
+                                caption="🔍 Evidência / Foto da Ocorrência - Clique para ampliar",
+                                width=120,
+                            )
                     except Exception:
                         pass
         else:
