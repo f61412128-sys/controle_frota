@@ -11,7 +11,7 @@ import pandas as pd
 import streamlit as st
 from config import DB_PATH
 from database.models import contar_registros, init_db
-from views.Abastecimentos import render as render_abastecimentos  # <--- NOVA IMPORTAÇÃO
+from views.abastecimentos import render as render_abastecimentos  # <--- NOVA IMPORTAÇÃO
 from views.Checklist import render as render_checklist
 from views.dashboard import render_dashboard
 from views.Manutenções import render as render_manutencoes
