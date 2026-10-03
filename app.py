@@ -11,7 +11,7 @@ import pandas as pd
 import streamlit as st
 from config import DB_PATH
 from database.models import contar_registros, init_db
-from views.abastecimentos import render as render_abastecimentos  # <--- NOVA IMPORTAÇÃO
+from views.abastecimentos import render as render_abastecimentos
 from views.Checklist import render as render_checklist
 from views.dashboard import render_dashboard
 from views.Manutenções import render as render_manutencoes
@@ -153,7 +153,6 @@ else:
     # --- PERFIL MOTORISTA ---
     if st.session_state["perfil"] == "motorista":
         st.info("📱 Modo Checklist Ativo")
-        # Se quiser permitir que motoristas também vejam ou abasteçam, pode adicionar separadores aqui
         render_checklist()
 
     # --- PERFIL ADMINISTRADOR ---
@@ -165,14 +164,29 @@ else:
             "Motoristas",
             "Checklist",
             "Manutenções",
-            "Abastecimentos",  # <--- NOVA OPÇÃO NO MENU
+            "Abastecimentos",
         ]
+
+        # Recupera a última aba salva na URL ou usa "Dashboard" como padrão
+        menu_atual_url = st.query_params.get("aba", "Dashboard")
+        indice_atual = (
+            opcoes_menu.index(menu_atual_url)
+            if menu_atual_url in opcoes_menu
+            else 0
+        )
 
         opcao = st.selectbox(
             "📍 Selecione o Módulo do Sistema:",
             opcoes_menu,
+            index=indice_atual,
             label_visibility="collapsed",
         )
+
+        # Atualiza o parâmetro na URL sempre que o usuário trocar de módulo
+        if opcao != menu_atual_url:
+            st.query_params["aba"] = opcao
+            st.rerun()
+
         st.markdown("---")
 
         if opcao == "Dashboard":
@@ -636,5 +650,5 @@ else:
         elif opcao == "Manutenções":
             render_manutencoes()
 
-        elif opcao == "Abastecimentos":  # <--- CHAMADA DA NOVA ABA
+        elif opcao == "Abastecimentos":
             render_abastecimentos()
