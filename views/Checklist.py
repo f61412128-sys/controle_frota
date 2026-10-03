@@ -50,6 +50,9 @@ def salvar_checklist(
     usuario_responsavel,
 ):
     localizacao_amigavel = obter_endereco_reverso(localizacao)
+    
+    # Hora local correta do Brasil (GMT-3)
+    data_hora_atual = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     conn = get_connection()
     cursor = conn.cursor()
@@ -65,7 +68,7 @@ def salvar_checklist(
             ("foto", "BYTEA"),
             ("tipo_operacao", "TEXT"),
             ("usuario_responsavel", "TEXT"),
-            ("created_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
+            ("created_at", "TIMESTAMP"),
         ]:
             if col_nome not in colunas_chk:
                 try:
@@ -80,7 +83,7 @@ def salvar_checklist(
         cursor.execute(
             """
             INSERT INTO checklists (veiculo_id, motorista_id, tipo_operacao, km, resultado, observacoes, localizacao, foto, usuario_responsavel, created_at)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id
             """,
             (
@@ -93,6 +96,7 @@ def salvar_checklist(
                 localizacao_amigavel,
                 foto_bytes,
                 usuario_responsavel,
+                data_hora_atual,
             ),
         )
         checklist_id = cursor.fetchone()[0]
@@ -112,6 +116,15 @@ def salvar_checklist(
                 )
                 colunas_oco = [col[0] for col in cursor.fetchall()]
 
+                # Adiciona colunas na tabela ocorrencias se não existirem para garantir que salvam a foto e responsável
+                for c_nome, c_tipo in [("foto", "BYTEA"), ("usuario_responsavel", "TEXT"), ("created_at", "TIMESTAMP")]:
+                    if c_nome not in colunas_oco:
+                        try:
+                            cursor.execute(f"ALTER TABLE ocorrencias ADD COLUMN {c_nome} {c_tipo}")
+                            conn.commit()
+                        except Exception:
+                            conn.rollback()
+
                 val_oco = {
                     "veiculo_id": veiculo_id,
                     "motorista_id": motorista_id if motorista_id else 1,
@@ -119,6 +132,9 @@ def salvar_checklist(
                     "item": item,
                     "descricao": f"Avaria apontada no checklist (Local: {localizacao_amigavel}): {item}",
                     "status": "Aberto",
+                    "usuario_responsavel": usuario_responsavel,
+                    "foto": foto_bytes,
+                    "created_at": data_hora_atual
                 }
                 if "gravidade" in colunas_oco:
                     val_oco["gravidade"] = "Média"
@@ -262,7 +278,6 @@ def render():
                             const url = new URL(window.parent.location);
                             url.searchParams.set('gps_auto', coords);
                             window.parent.history.replaceState({}, '', url);
-                            // Recarrega mantendo a query string atual (evita perder a rota/aba)
                             window.parent.location.search = url.search;
                         },
                         function(err) {
@@ -458,7 +473,6 @@ def render():
             titulo_card = f"{status_icone} {reg['placa']} - {reg['modelo']}{op_txt}{loc_resumida} | 🕒 {data_formatada}"
 
             with st.expander(titulo_card):
-                # Layout limpo dividido em colunas para os dados e miniatura da foto
                 col_detalhes, col_foto_card = st.columns([3, 1] if reg.get("foto") is not None else [1, 0.001])
 
                 with col_detalhes:
@@ -472,7 +486,6 @@ def render():
                     if reg["observacoes"]:
                         st.info(f"**Observações:** {reg['observacoes']}")
 
-                # Miniatura limpa da foto ao lado dos detalhes que expande ao clicar
                 if reg.get("foto") is not None:
                     with col_foto_card:
                         try:
