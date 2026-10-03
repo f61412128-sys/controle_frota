@@ -150,13 +150,21 @@ def render_dashboard(contar_registros_fn=None):
         else pd.DataFrame()
     )
 
-    # Carregar dados de ocorrências / incidentes se existirem
+    # Carregar dados de ocorrências com LEFT JOIN em checklists e veiculos para puxar a foto e dados do veículo
     df_ocorrencias = pd.DataFrame()
-    for t_oc in ["ocorrencias", "ocorrencia", "incidentes", "problemas"]:
-        if t_oc in tabelas_existentes:
-            df_temp = ler_tabela_direta(f"SELECT * FROM {t_oc}")
-            if not df_temp.empty:
-                df_ocorrencias = df_temp
+    if "ocorrencias" in tabelas_existentes:
+        query_ocorr = """
+            SELECT o.*, c.foto, v.placa, v.modelo 
+            FROM ocorrencias o
+            LEFT JOIN checklists c ON o.checklist_id = c.id
+            LEFT JOIN veiculos v ON o.veiculo_id = v.id
+            ORDER BY o.id DESC
+        """
+        df_ocorrencias = ler_tabela_direta(query_ocorr)
+    else:
+        for t_oc in ["ocorrencia", "incidentes", "problemas"]:
+            if t_oc in tabelas_existentes:
+                df_ocorrencias = ler_tabela_direta(f"SELECT * FROM {t_oc}")
                 break
 
     # Carregar dados de abastecimentos
@@ -801,7 +809,6 @@ def render_dashboard(contar_registros_fn=None):
                 unsafe_allow_html=True,
             )
 
-            # Filtra os veículos que terminam com os dígitos do rodízio de hoje
             if not df_veiculos.empty:
                 st.markdown("##### Veículos da Frota com Rodízio Hoje:")
                 digitos_alvo = []
@@ -868,7 +875,6 @@ def render_dashboard(contar_registros_fn=None):
             )
 
             for _, row in df_manutencoes.iterrows():
-                m_id = row.get("veiculo_id", "N/A")
                 m_desc = row.get(
                     "descricao",
                     row.get("servico", row.get("tipo_manutencao", "Manutenção")),
@@ -937,11 +943,16 @@ def render_dashboard(contar_registros_fn=None):
                 oc_status = row.get("status", "Pendente")
                 oc_data = row.get("data", row.get("created_at", "N/A"))
                 oc_resp = row.get("responsavel", row.get("motorista", "N/A"))
+                
+                placa_oc = row.get("placa", "")
+                modelo_oc = row.get("modelo", "")
+                veiculo_info = f" - {placa_oc} ({modelo_oc})" if placa_oc else ""
+                foto_oc = row.get("foto", None)
 
                 st.markdown(
                     f"""
                     <div class="ocorr-card">
-                        <div class="ocorr-header">⚠️ {oc_desc}</div>
+                        <div class="ocorr-header">⚠️ {oc_desc}{veiculo_info}</div>
                         <div class="ocorr-info">Status: <span>{oc_status}</span></div>
                         <div class="ocorr-info">Responsável: <span>{oc_resp}</span></div>
                         <div class="ocorr-info">Data: <span>{oc_data}</span></div>
@@ -949,6 +960,13 @@ def render_dashboard(contar_registros_fn=None):
                 """,
                     unsafe_allow_html=True,
                 )
+
+                # Exibir a foto do checklist se estiver disponível
+                if foto_oc and pd.notna(foto_oc) and str(foto_oc).strip() not in ["", "None", "nan"]:
+                    try:
+                        st.image(foto_oc, caption=f"Evidência / Foto da Ocorrência", width=350)
+                    except Exception:
+                        pass
         else:
             st.success(
                 "✅ Nenhuma ocorrência ou incidente registado no momento!"
