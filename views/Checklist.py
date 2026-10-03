@@ -267,7 +267,6 @@ def render():
                             window.parent.location.reload();
                         },
                         function(err) {
-                            // Se falhar ou for negado, marca como não capturado para não travar
                             const url = new URL(window.parent.location);
                             url.searchParams.set('gps_auto', 'GPS Não Capturado');
                             window.parent.history.replaceState({}, '', url);
@@ -330,10 +329,15 @@ def render():
             st.divider()
             st.subheader("3. Evidências e Observações")
 
-            ativar_camera = st.checkbox("📸 Deseja tirar foto de alguma avaria?")
-            foto = None
-            if ativar_camera:
-                foto = st.camera_input("Aponte para a avaria e tire a fotografia")
+            st.write("📸 **Fotografia da Avaria (Opcional)**")
+            st.caption("Tire uma foto com a câmara ou selecione um ficheiro/imagem da galeria.")
+            
+            foto = st.file_uploader(
+                "Carregar ou tirar foto da avaria", 
+                type=["jpg", "jpeg", "png", "heic"], 
+                key="foto_avaria_checklist",
+                label_visibility="collapsed"
+            )
 
             obs = st.text_area("Observações / Detalhes de problemas")
 
@@ -343,7 +347,7 @@ def render():
 
             if btn_enviar:
                 loc_final = st.session_state.get("gps_localizacao_atual", "GPS Não Capturado")
-                foto_bytes = foto.getvalue() if foto else None
+                foto_bytes = foto.getvalue() if foto is not None else None
 
                 try:
                     salvar_checklist(
@@ -406,7 +410,7 @@ def render():
                 "Filtrar por Veículo", lista_veiculos_filtro
             )
         with col_f2:
-            apenas_pendencias = st.checkbox("⚠️️ Apenas com Pendências")
+            apenas_pendencias = st.checkbox("⚠ Apenas com Pendências")
 
         registros_filtrados = registros
         if filtro_veiculo != "Todos":
