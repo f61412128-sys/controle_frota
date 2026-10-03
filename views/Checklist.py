@@ -235,7 +235,7 @@ def render():
     )
 
     # -------------------------------------------------------------------------
-    # ABA 1: FORMULÁRIO DE NOVO CHECKLIST (Sem st.form para reter o file_uploader)
+    # ABA 1: FORMULÁRIO DE NOVO CHECKLIST
     # -------------------------------------------------------------------------
     with tab_novo:
         st.caption("Preencha a inspeção do veículo com atenção.")
@@ -313,6 +313,18 @@ def render():
             label_visibility="collapsed"
         )
 
+        # Gestão e pré-visualização segura da imagem carregada no session_state
+        if foto is not None:
+            st.session_state["checklist_foto_bytes"] = foto.getvalue()
+            try:
+                img_preview = Image.open(io.BytesIO(st.session_state["checklist_foto_bytes"]))
+                st.image(img_preview, caption="📸 Pré-visualização da Foto Capturada", width=180)
+            except Exception:
+                pass
+        else:
+            if "checklist_foto_bytes" not in st.session_state:
+                st.session_state["checklist_foto_bytes"] = None
+
         obs = st.text_area("Observações / Detalhes de problemas")
 
         # Tratamento de parâmetros de GPS recebidos da sessão / URL
@@ -323,8 +335,7 @@ def render():
 
         if st.button("✅ Finalizar e Enviar Checklist", use_container_width=True):
             with st.spinner("🛰 Buscando sinal de GPS de alta precisão e gravando registo..."):
-                # Captura os bytes da imagem antes de qualquer refresh
-                foto_bytes = foto.getvalue() if foto is not None else None
+                foto_bytes = st.session_state.get("checklist_foto_bytes", None)
                 loc_final = st.session_state.get("gps_localizacao_atual", "GPS Não Capturado")
 
                 try:
@@ -341,6 +352,8 @@ def render():
                     )
                     if "gps_localizacao_atual" in st.session_state:
                         del st.session_state["gps_localizacao_atual"]
+                    if "checklist_foto_bytes" in st.session_state:
+                        del st.session_state["checklist_foto_bytes"]
 
                     st.success("Checklist registrado e salvo com sucesso no sistema!")
                     time.sleep(1)
@@ -454,8 +467,13 @@ def render():
                 if reg.get("foto") is not None:
                     with col_foto_card:
                         try:
+                            # Converte memoryview se necessário para exibição correta no histórico
+                            foto_hist = reg["foto"]
+                            if isinstance(foto_hist, memoryview):
+                                foto_hist = bytes(foto_hist)
+
                             st.write("🖼 **Avaria:**")
-                            imagem_obj = Image.open(io.BytesIO(reg["foto"]))
+                            imagem_obj = Image.open(io.BytesIO(foto_hist))
                             st.image(imagem_obj, width=120)
                             with st.expander("🔍 Ampliar Foto"):
                                 st.image(imagem_obj, use_container_width=True)
