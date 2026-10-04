@@ -245,36 +245,6 @@ def render():
     with tab_novo:
         st.caption("Preencha a inspeção do veículo com atenção.")
 
-        # Script invisível para captura automática de GPS em segundo plano (sem botão dedicado)
-        components.html("""
-            <script>
-            if (navigator.geolocation) {
-                navigator.geolocation.getCurrentPosition(
-                    function(position) {
-                        const lat = position.coords.latitude;
-                        const lon = position.coords.longitude;
-                        const coords = lat + "," + lon;
-                        const urlParams = new URLSearchParams(window.parent.location.search);
-                        if (urlParams.get('gps_auto') !== coords) {
-                            urlParams.set('gps_auto', coords);
-                            window.parent.history.replaceState({}, '', window.parent.location.pathname + '?' + urlParams.toString());
-                        }
-                    },
-                    function(error) {
-                        console.log("Erro GPS: ", error);
-                    },
-                    { timeout: 8000, enableHighAccuracy: true }
-                );
-            }
-            </script>
-        """, height=0)
-
-        # Captura o parâmetro de GPS inserido pelo script JS na URL
-        query_params = st.query_params
-        gps_recebido = query_params.get("gps_auto", None)
-        if gps_recebido:
-            st.session_state["gps_localizacao_atual"] = gps_recebido
-
         veiculos = listar_veiculos()
 
         if not veiculos:
@@ -293,8 +263,57 @@ def render():
         )
         motorista_id = st.session_state.get("motorista_id")
 
+        # -------------------------------------------------------------------------
+        # PROCESSAMENTO AUTOMÁTICO DO ENVIO COM GPS VIA JS NO CLIQUE DO BOTÃO FINAL
+        # -------------------------------------------------------------------------
+        query_params = st.query_params
+        if query_params.get("executar_salvar") == "true":
+            gps_final = query_params.get("gps_val", "GPS Não Capturado")
+            st.query_params.clear()
+
+            veiculo_sel_val = st.session_state.get("sel_veiculo_chk")
+            tipo_op_val = st.session_state.get("sel_tipo_op_chk")
+            km_val = st.session_state.get("input_km_chk")
+            obs_val = st.session_state.get("text_obs_chk", "")
+
+            if veiculo_sel_val and veiculo_sel_val in mapa_v:
+                veiculo_id_val, _ = mapa_v[veiculo_sel_val]
+
+                respostas_val = {}
+                for cat, item in [
+                    ("Pneus", "Calibragem e Estado Geral"),
+                    ("Fluidos", "Nível de Óleo do Motor"),
+                    ("Fluidos", "Nível de Água / Radiador"),
+                    ("Elétrica", "Faróis e Setas"),
+                    ("Elétrica", "Luzes de Freio e Ré"),
+                    ("Segurança", "Cinto de Segurança e Espelhos"),
+                    ("Estrutura", "Limpeza e Funilaria"),
+                ]:
+                    respostas_val[(cat, item)] = st.session_state.get(f"item_{cat}_{item}", "OK")
+
+                foto_bytes_val = st.session_state.get("checklist_foto_bytes", None)
+
+                try:
+                    salvar_checklist(
+                        veiculo_id_val,
+                        motorista_id,
+                        tipo_op_val,
+                        int(km_val) if km_val else 0,
+                        respostas_val,
+                        obs_val,
+                        foto_bytes_val,
+                        gps_final,
+                        usuario_nome,
+                    )
+                    st.session_state["checklist_foto_bytes"] = None
+                    st.success("Checklist registrado e salvo com sucesso no sistema!")
+                    time.sleep(1)
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Erro ao salvar checklist: {e}")
+
         st.subheader("1. Identificação")
-        veiculo_sel = st.selectbox("Selecione o Veículo*", list(mapa_v.keys()))
+        veiculo_sel = st.selectbox("Selecione o Veículo*", list(mapa_v.keys()), key="sel_veiculo_chk")
         veiculo_id, km_anterior = mapa_v[veiculo_sel]
 
         tipo_operacao = st.selectbox(
@@ -303,6 +322,7 @@ def render():
                 "Saída (Retirada do Veículo)",
                 "Entrada (Devolução ao Pátio)",
             ],
+            key="sel_tipo_op_chk"
         )
 
         st.text_input("Responsável pelo Registo", value=usuario_nome, disabled=True)
@@ -311,6 +331,7 @@ def render():
             "Quilometragem Atual (KM)*",
             min_value=int(km_anterior),
             value=int(km_anterior),
+            key="input_km_chk"
         )
 
         st.divider()
@@ -338,58 +359,84 @@ def render():
         st.divider()
         st.subheader("3. Evidências e Observações")
 
-        st.write("📸 **Fotografia da Avaria (Opcional)**")
-        st.caption("Tire uma foto na hora ou selecione um ficheiro da galeria.")
+        st.write("📸 **Fotografia da Avaria (Câmara ou Galeria)**")
         
-        foto = st.file_uploader(
-            "Carregar ou tirar foto da avaria", 
-            type=["jpg", "jpeg", "png", "heic"], 
-            key="foto_avaria_checklist",
-            label_visibility="collapsed"
+        foto_camera = st.camera_input("Tirar foto com a câmara", key="cam_avaria_chk")
+        foto_upload = st.file_uploader(
+            "Ou selecione um ficheiro da galeria", 
+            type=["jpg", "jpeg", "png", "heic"],
+            key="up_avaria_chk"
         )
 
-        # Gestão e pré-visualização segura da imagem carregada no session_state
-        if foto is not None:
-            st.session_state["checklist_foto_bytes"] = foto.getvalue()
-        else:
-            if "checklist_foto_bytes" not in st.session_state:
-                st.session_state["checklist_foto_bytes"] = None
+        foto_ativa = foto_camera if foto_camera is not None else foto_upload
+
+        if foto_ativa is not None:
+            st.session_state["checklist_foto_bytes"] = foto_ativa.getvalue()
+        elif "checklist_foto_bytes" not in st.session_state:
+            st.session_state["checklist_foto_bytes"] = None
 
         if st.session_state.get("checklist_foto_bytes"):
             try:
                 img_preview = Image.open(io.BytesIO(st.session_state["checklist_foto_bytes"]))
-                st.image(img_preview, caption="📸 Pré-visualização da Foto Capturada", width=180)
+                st.image(img_preview, caption="📸 Pré-visualização da Imagem", width=180)
             except Exception:
                 pass
 
-        obs = st.text_area("Observações / Detalhes de problemas")
+        obs = st.text_area("Observações / Detalhes de problemas", key="text_obs_chk")
 
-        if st.button("✅ Finalizar e Enviar Checklist", use_container_width=True):
-            with st.spinner("🛰 Consolidando dados e gravando registo..."):
-                foto_bytes = st.session_state.get("checklist_foto_bytes", None)
-                loc_final = st.session_state.get("gps_localizacao_atual", "GPS Não Capturado")
+        st.markdown("<br>", unsafe_allow_html=True)
 
-                try:
-                    salvar_checklist(
-                        veiculo_id,
-                        motorista_id,
-                        tipo_operacao,
-                        km,
-                        respostas,
-                        obs,
-                        foto_bytes,
-                        loc_final,
-                        usuario_nome,
-                    )
-                    st.session_state["checklist_foto_bytes"] = None
-                    if "gps_localizacao_atual" in st.session_state:
-                        del st.session_state["gps_localizacao_atual"]
-
-                    st.success("Checklist registrado e salvo com sucesso no sistema!")
-                    time.sleep(1)
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Erro ao salvar checklist: {e}")
+        # Botão principal unificado que captura o GPS instantaneamente e envia o formulário sem poluir o ecrã
+        components.html("""
+            <div style="text-align: center; width: 100%;">
+                <button id="btn_finalizar" onclick="salvarComGps()" style="
+                    background-color: #ff4b4b;
+                    color: white;
+                    border: none;
+                    padding: 0.8rem 1rem;
+                    font-size: 1rem;
+                    font-weight: bold;
+                    border-radius: 0.5rem;
+                    width: 100%;
+                    cursor: pointer;
+                    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+                    font-family: sans-serif;
+                ">✅ Finalizar e Enviar Checklist</button>
+            </div>
+            <script>
+            function salvarComGps() {
+                const btn = document.getElementById('btn_finalizar');
+                btn.innerText = "🛰 Obtendo GPS e Salvando...";
+                btn.disabled = true;
+                
+                if (navigator.geolocation) {
+                    navigator.geolocation.getCurrentPosition(
+                        function(position) {
+                            const lat = position.coords.latitude;
+                            const lon = position.coords.longitude;
+                            const coords = lat + "," + lon;
+                            const urlParams = new URLSearchParams(window.parent.location.search);
+                            urlParams.set('executar_salvar', 'true');
+                            urlParams.set('gps_val', coords);
+                            window.parent.location.search = urlParams.toString();
+                        },
+                        function(error) {
+                            const urlParams = new URLSearchParams(window.parent.location.search);
+                            urlParams.set('executar_salvar', 'true');
+                            urlParams.set('gps_val', 'GPS Não Permitido/Disponível');
+                            window.parent.location.search = urlParams.toString();
+                        },
+                        { timeout: 7000, enableHighAccuracy: true }
+                    );
+                } else {
+                    const urlParams = new URLSearchParams(window.parent.location.search);
+                    urlParams.set('executar_salvar', 'true');
+                    urlParams.set('gps_val', 'GPS Não Suportado');
+                    window.parent.location.search = urlParams.toString();
+                }
+            }
+            </script>
+        """, height=65)
 
     # -------------------------------------------------------------------------
     # ABA 2: HISTÓRICO DE REGISTROS
