@@ -1,43 +1,12 @@
 import datetime
 import io
-import json
 import time
-import urllib.request
-from PIL import Image
 import pandas as pd
 import streamlit as st
-import streamlit.components.v1 as components
+from PIL import Image
 import psycopg2.extras
 from database.connection import get_connection
 from views.services.cadastros_service import listar_motoristas, listar_veiculos
-
-
-def obter_endereco_reverso(lat_lon_str):
-    """Converte coordenadas (latitude, longitude) num endereço legível completo via Nominatim."""
-    try:
-        if not lat_lon_str or "," not in lat_lon_str or "Erro" in lat_lon_str or "Não" in lat_lon_str:
-            return lat_lon_str
-
-        partes = lat_lon_str.split(",")
-        if len(partes) != 2:
-            return lat_lon_str
-
-        lat = partes[0].strip()
-        lon = partes[1].strip()
-
-        url = f"https://nominatim.openstreetmap.org/reverse?format=json&lat={lat}&lon={lon}&zoom=18&addressdetails=1"
-        req = urllib.request.Request(
-            url, headers={"User-Agent": "ControleFrotaApp/1.0"}
-        )
-
-        with urllib.request.urlopen(req, timeout=5) as response:
-            data = json.loads(response.read().decode())
-            if "display_name" in data:
-                return data["display_name"]
-    except Exception:
-        pass
-
-    return lat_lon_str
 
 
 def salvar_checklist(
@@ -48,17 +17,15 @@ def salvar_checklist(
     itens_respostas,
     observacoes,
     foto_bytes,
-    localizacao,
     usuario_responsavel,
 ):
-    localizacao_amigavel = obter_endereco_reverso(localizacao)
-    
     # Horário rigoroso de Brasília (UTC-3)
     fuso_brasilia = datetime.timezone(datetime.timedelta(hours=-3))
     data_hora_atual = datetime.datetime.now(fuso_brasilia).strftime("%Y-%m-%d %H:%M:%S")
 
     # Envolve os bytes no adaptador binário oficial do psycopg2 para campos BYTEA do Postgres
     foto_param = psycopg2.Binary(foto_bytes) if foto_bytes else None
+    localizacao_padrao = "Registado via App (Mobile)"
 
     conn = get_connection()
     cursor = conn.cursor()
@@ -99,7 +66,7 @@ def salvar_checklist(
                 km,
                 resultado_geral,
                 observacoes,
-                localizacao_amigavel,
+                localizacao_padrao,
                 foto_param,
                 usuario_responsavel,
                 data_hora_atual,
@@ -135,7 +102,7 @@ def salvar_checklist(
                     "motorista_id": motorista_id if motorista_id else 1,
                     "checklist_id": checklist_id,
                     "item": item,
-                    "descricao": f"Avaria apontada no checklist (Local: {localizacao_amigavel}): {item}",
+                    "descricao": f"Avaria apontada no checklist: {item}",
                     "status": "Aberto",
                     "usuario_responsavel": usuario_responsavel,
                     "foto": foto_param,
@@ -263,55 +230,6 @@ def render():
         )
         motorista_id = st.session_state.get("motorista_id")
 
-        # -------------------------------------------------------------------------
-        # PROCESSAMENTO AUTOMÁTICO DO ENVIO COM GPS VIA JS NO CLIQUE DO BOTÃO FINAL
-        # -------------------------------------------------------------------------
-        query_params = st.query_params
-        if query_params.get("executar_salvar") == "true":
-            gps_final = query_params.get("gps_val", "GPS Não Capturado")
-            st.query_params.clear()
-
-            veiculo_sel_val = st.session_state.get("sel_veiculo_chk")
-            tipo_op_val = st.session_state.get("sel_tipo_op_chk")
-            km_val = st.session_state.get("input_km_chk")
-            obs_val = st.session_state.get("text_obs_chk", "")
-
-            if veiculo_sel_val and veiculo_sel_val in mapa_v:
-                veiculo_id_val, _ = mapa_v[veiculo_sel_val]
-
-                respostas_val = {}
-                for cat, item in [
-                    ("Pneus", "Calibragem e Estado Geral"),
-                    ("Fluidos", "Nível de Óleo do Motor"),
-                    ("Fluidos", "Nível de Água / Radiador"),
-                    ("Elétrica", "Faróis e Setas"),
-                    ("Elétrica", "Luzes de Freio e Ré"),
-                    ("Segurança", "Cinto de Segurança e Espelhos"),
-                    ("Estrutura", "Limpeza e Funilaria"),
-                ]:
-                    respostas_val[(cat, item)] = st.session_state.get(f"item_{cat}_{item}", "OK")
-
-                foto_bytes_val = st.session_state.get("checklist_foto_bytes", None)
-
-                try:
-                    salvar_checklist(
-                        veiculo_id_val,
-                        motorista_id,
-                        tipo_op_val,
-                        int(km_val) if km_val else 0,
-                        respostas_val,
-                        obs_val,
-                        foto_bytes_val,
-                        gps_final,
-                        usuario_nome,
-                    )
-                    st.session_state["checklist_foto_bytes"] = None
-                    st.success("Checklist registrado e salvo com sucesso no sistema!")
-                    time.sleep(1)
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Erro ao salvar checklist: {e}")
-
         st.subheader("1. Identificação")
         veiculo_sel = st.selectbox("Selecione o Veículo*", list(mapa_v.keys()), key="sel_veiculo_chk")
         veiculo_id, km_anterior = mapa_v[veiculo_sel]
@@ -386,64 +304,35 @@ def render():
 
         st.markdown("<br>", unsafe_allow_html=True)
 
-        # Botão principal unificado que captura o GPS instantaneamente e envia o formulário sem poluir o ecrã
-        components.html("""
-            <div style="text-align: center; width: 100%;">
-                <button id="btn_finalizar" onclick="salvarComGps()" style="
-                    background-color: #ff4b4b;
-                    color: white;
-                    border: none;
-                    padding: 0.8rem 1rem;
-                    font-size: 1rem;
-                    font-weight: bold;
-                    border-radius: 0.5rem;
-                    width: 100%;
-                    cursor: pointer;
-                    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
-                    font-family: sans-serif;
-                ">✅ Finalizar e Enviar Checklist</button>
-            </div>
-            <script>
-            function salvarComGps() {
-                const btn = document.getElementById('btn_finalizar');
-                btn.innerText = "🛰 Obtendo GPS e Salvando...";
-                btn.disabled = true;
-                
-                if (navigator.geolocation) {
-                    navigator.geolocation.getCurrentPosition(
-                        function(position) {
-                            const lat = position.coords.latitude;
-                            const lon = position.coords.longitude;
-                            const coords = lat + "," + lon;
-                            const urlParams = new URLSearchParams(window.parent.location.search);
-                            urlParams.set('executar_salvar', 'true');
-                            urlParams.set('gps_val', coords);
-                            window.parent.location.search = urlParams.toString();
-                        },
-                        function(error) {
-                            const urlParams = new URLSearchParams(window.parent.location.search);
-                            urlParams.set('executar_salvar', 'true');
-                            urlParams.set('gps_val', 'GPS Não Permitido/Disponível');
-                            window.parent.location.search = urlParams.toString();
-                        },
-                        { timeout: 7000, enableHighAccuracy: true }
-                    );
-                } else {
-                    const urlParams = new URLSearchParams(window.parent.location.search);
-                    urlParams.set('executar_salvar', 'true');
-                    urlParams.set('gps_val', 'GPS Não Suportado');
-                    window.parent.location.search = urlParams.toString();
-                }
-            }
-            </script>
-        """, height=65)
+        # Botão nativo puro do Streamlit: rápido, limpo e sem travamentos
+        if st.button("✅ Finalizar e Enviar Checklist", use_container_width=True, type="primary"):
+            with st.spinner("Salvando registo no sistema..."):
+                foto_bytes = st.session_state.get("checklist_foto_bytes", None)
+
+                try:
+                    salvar_checklist(
+                        veiculo_id,
+                        motorista_id,
+                        tipo_operacao,
+                        km,
+                        respostas,
+                        obs,
+                        foto_bytes,
+                        usuario_nome,
+                    )
+                    st.session_state["checklist_foto_bytes"] = None
+                    st.success("Checklist registrado e salvo com sucesso no sistema!")
+                    time.sleep(1)
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Erro ao salvar checklist: {e}")
 
     # -------------------------------------------------------------------------
     # ABA 2: HISTÓRICO DE REGISTROS
     # -------------------------------------------------------------------------
     with tab_historico:
         st.caption(
-            "Consulte os históricos de vistorias, avarias e localização exata reportada."
+            "Consulte os históricos de vistorias, avarias e registos efetuados."
         )
 
         registros = buscar_historico_checklists()
@@ -517,15 +406,8 @@ def render():
                     "%d/%m/%Y %H:%M"
                 )
 
-            localizacao_txt = reg.get("localizacao", "Não informada")
             op_txt = f" | 🔄 {reg.get('tipo_operacao', 'N/A')}"
-            loc_resumida = (
-                f" | 📍 {localizacao_txt[:30]}..."
-                if len(localizacao_txt) > 30
-                else f" | 📍 {localizacao_txt}"
-            )
-
-            titulo_card = f"{status_icone} {reg['placa']} - {reg['modelo']}{op_txt}{loc_resumida} | 🕒 {data_formatada}"
+            titulo_card = f"{status_icone} {reg['placa']} - {reg['modelo']}{op_txt} | 🕒 {data_formatada}"
 
             with st.expander(titulo_card):
                 foto_val = reg.get("foto")
@@ -541,8 +423,7 @@ def render():
                 with col_detalhes:
                     st.write(f"**Tipo de Operação:** {reg.get('tipo_operacao', 'N/A')}")
                     st.write(f"**Responsável / Admin:** {reg['motorista_nome']}")
-                    st.write(f"**Data e Hora do Registro:** {data_formatada}")
-                    st.write(f"**Endereço / Localização (GPS):** {localizacao_txt}")
+                    st.write(f"**Data e Hora do Registo:** {data_formatada}")
                     st.write(f"**KM Inspecionado:** {reg['km']} km")
                     st.write(f"**Resultado Geral:** {reg['resultado']}")
 
