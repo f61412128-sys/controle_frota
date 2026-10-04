@@ -245,31 +245,37 @@ def render():
     with tab_novo:
         st.caption("Preencha a inspeção do veículo com atenção.")
 
-        # Script invisível para capturar o GPS automaticamente em segundo plano assim que o form abre
+        # Script invisível que captura o GPS automaticamente no primeiro toque/clique no ecrã
         components.html("""
             <script>
-            if (navigator.geolocation) {
-                navigator.geolocation.getCurrentPosition(
-                    function(position) {
-                        const lat = position.coords.latitude;
-                        const lon = position.coords.longitude;
-                        const coords = lat + "," + lon;
-                        const urlParams = new URLSearchParams(window.parent.location.search);
-                        if (urlParams.get('gps_auto') !== coords) {
-                            urlParams.set('gps_auto', coords);
-                            window.parent.history.replaceState({}, '', window.parent.location.pathname + '?' + urlParams.toString());
-                        }
-                    },
-                    function(error) {
-                        console.log("GPS negado ou indisponível");
-                    },
-                    { timeout: 8000, enableHighAccuracy: true }
-                );
+            function captureGPSOnce() {
+                if (navigator.geolocation) {
+                    navigator.geolocation.getCurrentPosition(
+                        function(position) {
+                            const lat = position.coords.latitude;
+                            const lon = position.coords.longitude;
+                            const coords = lat + "," + lon;
+                            const urlParams = new URLSearchParams(window.parent.location.search);
+                            if (!urlParams.get('gps_auto') || urlParams.get('gps_auto') !== coords) {
+                                urlParams.set('gps_auto', coords);
+                                window.parent.history.replaceState({}, '', window.parent.location.pathname + '?' + urlParams.toString());
+                            }
+                        },
+                        function(error) {
+                            console.log("GPS indisponível ou negado");
+                        },
+                        { timeout: 8000, enableHighAccuracy: true }
+                    );
+                }
+                document.removeEventListener('click', captureGPSOnce);
+                document.removeEventListener('touchstart', captureGPSOnce);
             }
+            document.addEventListener('click', captureGPSOnce);
+            document.addEventListener('touchstart', captureGPSOnce);
             </script>
         """, height=0)
 
-        # Captura o GPS obtido pelo script em segundo plano
+        # Captura o GPS obtido em segundo plano
         query_params = st.query_params
         gps_recebido = query_params.get("gps_auto", None)
         if gps_recebido:
@@ -367,7 +373,6 @@ def render():
 
         st.markdown("<br>", unsafe_allow_html=True)
 
-        # Botão nativo puro do Streamlit: limpo, rápido e sem travamentos
         if st.button("✅ Finalizar e Enviar Checklist", use_container_width=True, type="primary"):
             with st.spinner("Salvando registo e localização no sistema..."):
                 foto_bytes = st.session_state.get("checklist_foto_bytes", None)
