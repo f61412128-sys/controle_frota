@@ -556,7 +556,7 @@ def render_dashboard(contar_registros_fn=None):
 
     c5, c6, c7, c8 = st.columns(4)
     c5.metric("💰 Custo Manutenções", f"R$ {custo_total_manut:,.2f}")
-    c6.metric("👨✈️ Motoristas", total_motoristas)
+    c6.metric("👨 Motoristas", total_motoristas)
     c7.metric("⚠ Ocorrências", total_ocorrencias)
     c8.metric("📄 Venc. Contratos", total_venc_contratos)
 
