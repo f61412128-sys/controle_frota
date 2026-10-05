@@ -353,8 +353,7 @@ def render_dashboard(contar_registros_fn=None):
                 raw_data = ult_chk.get(col_data) if col_data else None
 
                 if isinstance(raw_data, datetime.datetime):
-                    raw_data_ajustado = raw_data + datetime.timedelta(hours=3)
-                    data_formatada = raw_data_ajustado.strftime("%d/%m/%Y %H:%M")
+                    data_formatada = raw_data.strftime("%d/%m/%Y %H:%M")
                 elif raw_data and str(raw_data).strip() not in [
                     "",
                     "None",
@@ -363,8 +362,7 @@ def render_dashboard(contar_registros_fn=None):
                     data_str = str(raw_data).strip()
                     try:
                         dt_parsed = pd.to_datetime(data_str)
-                        dt_ajustado = dt_parsed + pd.Timedelta(hours=3)
-                        data_formatada = dt_ajustado.strftime("%d/%m/%Y %H:%M")
+                        data_formatada = dt_parsed.strftime("%d/%m/%Y %H:%M")
                     except Exception:
                         data_formatada = (
                             data_str[:16].replace("T", " ")
@@ -776,8 +774,7 @@ def render_dashboard(contar_registros_fn=None):
                         try:
                             if col_data_abast and pd.notna(ab_row.get(col_data_abast)):
                                 dt_ab = pd.to_datetime(ab_row.get(col_data_abast))
-                                dt_ab_ajustado = dt_ab + pd.Timedelta(hours=3)
-                                data_ab = dt_ab_ajustado.strftime("%d/%m/%Y %H:%M")
+                                data_ab = dt_ab.strftime("%d/%m/%Y %H:%M")
                         except Exception:
                             pass
 
@@ -790,7 +787,6 @@ def render_dashboard(contar_registros_fn=None):
                         )
                         km_ab = ab_row.get(col_km_item, "N/A") if col_km_item else "N/A"
 
-                        # Renderiza cada abastecimento com os seus dados e a respetiva foto dentro do card
                         with st.container():
                             st.markdown(
                                 f"""
