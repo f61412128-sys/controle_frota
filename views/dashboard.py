@@ -351,9 +351,8 @@ def render_dashboard(contar_registros_fn=None):
 
                 ult_chk = df_chk_veiculo.iloc[0]
                 raw_data = ult_chk.get(col_data) if col_data else None
-                
+
                 if isinstance(raw_data, datetime.datetime):
-                    # Adiciona 3 horas para corrigir o fuso horário para a hora correta
                     raw_data_ajustado = raw_data + datetime.timedelta(hours=3)
                     data_formatada = raw_data_ajustado.strftime("%d/%m/%Y %H:%M")
                 elif raw_data and str(raw_data).strip() not in [
@@ -700,7 +699,7 @@ def render_dashboard(contar_registros_fn=None):
 
         st.divider()
         st.markdown(
-            "##### 🚗 Desempenho de Consumo Detalhado por Cada Veículo"
+            "##### 🚗 Histórico de Abastecimentos e Comprovantes por Veículo"
         )
 
         if df_veiculos.empty:
@@ -709,7 +708,7 @@ def render_dashboard(contar_registros_fn=None):
             st.markdown(
                 """
                 <style>
-                .consumo-card {
+                .abast-card {
                     background-color: #111827;
                     border: 1px solid #1f2937;
                     border-left: 4px solid #10b981;
@@ -717,18 +716,18 @@ def render_dashboard(contar_registros_fn=None):
                     border-radius: 8px;
                     margin-bottom: 12px;
                 }
-                .consumo-header {
+                .abast-header {
                     font-size: 15px;
                     font-weight: bold;
                     color: #ffffff;
                     margin-bottom: 8px;
                 }
-                .consumo-info {
+                .abast-info {
                     font-size: 13px;
                     color: #9ca3af;
                     margin-bottom: 4px;
                 }
-                .consumo-info span {
+                .abast-info span {
                     color: #f3f4f6;
                     font-weight: 500;
                 }
@@ -740,15 +739,10 @@ def render_dashboard(contar_registros_fn=None):
             for _, row in df_veiculos.iterrows():
                 placa = str(row.get("placa", "N/A"))
                 modelo = str(row.get("modelo", "N/A"))
-                consumo = row.get("consumo_medio", "Não calculado")
+                v_id = row.get("id")
 
-                gasto_veiculo = 0.0
-                litros_veiculo = 0.0
-                km_percorrido = "Não registado"
                 df_abast_v = pd.DataFrame()
-
                 if not df_abastecimentos.empty:
-                    v_id = row.get("id")
                     mask_v = pd.Series(False, index=df_abastecimentos.index)
                     if "veiculo_id" in df_abastecimentos.columns and v_id is not None:
                         mask_v |= df_abastecimentos["veiculo_id"] == v_id
@@ -760,91 +754,82 @@ def render_dashboard(contar_registros_fn=None):
                             .str.strip()
                             == placa.upper()
                         )
-
                     df_abast_v = df_abastecimentos[mask_v]
-                    if not df_abast_v.empty:
-                        if col_valor_abast:
-                            gasto_veiculo = float(
-                                pd.to_numeric(
-                                    df_abast_v[col_valor_abast]
-                                    .astype(str)
-                                    .str.replace("R$", "", regex=True)
-                                    .str.replace(",", ".", regex=False),
-                                    errors="coerce",
-                                ).sum()
-                            )
-                        if col_litros_abast:
-                            litros_veiculo = float(
-                                pd.to_numeric(
-                                    df_abast_v[col_litros_abast], errors="coerce"
-                                ).sum()
-                            )
-                        col_km = next(
-                            (
-                                c
-                                for c in [
-                                    "km",
-                                    "quilometragem",
-                                    "odometro",
-                                    "km_atual",
-                                ]
-                                if c in df_abast_v.columns
-                            ),
-                            None,
-                        )
-                        if col_km:
-                            k_vals = pd.to_numeric(
-                                df_abast_v[col_km], errors="coerce"
-                            ).dropna()
-                            if len(k_vals) >= 2:
-                                km_percorrido = (
-                                    f"{k_vals.iloc[-1] - k_vals.iloc[0]} km"
-                                )
 
-                st.markdown(
-                    f"""
-                    <div class="consumo-card">
-                        <div class="consumo-header">⛽ {placa} - {modelo}</div>
-                        <div class="consumo-info">Consumo Médio: <span>{consumo}</span></div>
-                        <div class="consumo-info">KM Percorrido: <span>{km_percorrido}</span></div>
-                        <div class="consumo-info">Total Litros Abastecidos: <span>{litros_veiculo:.1f} L</span></div>
-                        <div class="consumo-info">Gasto Acumulado: <span>R$ {gasto_veiculo:,.2f}</span></div>
-                    </div>
-                """,
-                    unsafe_allow_html=True,
-                )
-
-                if not df_abast_v.empty and col_comprovante_abast:
+                if df_abast_v.empty:
+                    st.markdown(
+                        f"""
+                        <div class="abast-card">
+                            <div class="abast-header">⛽ {placa} - {modelo}</div>
+                            <div class="abast-info">Nenhum registo de abastecimento para este veículo.</div>
+                        </div>
+                    """,
+                        unsafe_allow_html=True,
+                    )
+                else:
                     for _, ab_row in df_abast_v.iterrows():
-                        comprovante_img = ab_row.get(col_comprovante_abast)
-                        if comprovante_img is not None:
-                            try:
-                                data_ab_str = (
-                                    str(ab_row.get(col_data_abast, ""))
-                                    if col_data_abast
-                                    else ""
-                                )
-                                if isinstance(comprovante_img, memoryview):
-                                    comprovante_img = bytes(comprovante_img)
+                        data_ab = (
+                            str(ab_row.get(col_data_abast, "N/A"))
+                            if col_data_abast
+                            else "N/A"
+                        )
+                        try:
+                            if col_data_abast and pd.notna(ab_row.get(col_data_abast)):
+                                dt_ab = pd.to_datetime(ab_row.get(col_data_abast))
+                                dt_ab_ajustado = dt_ab + pd.Timedelta(hours=3)
+                                data_ab = dt_ab_ajustado.strftime("%d/%m/%Y %H:%M")
+                        except Exception:
+                            pass
 
-                                if isinstance(comprovante_img, bytes):
-                                    if len(comprovante_img) > 0:
-                                        img_obj = Image.open(io.BytesIO(comprovante_img))
-                                        st.image(
-                                            img_obj,
-                                            caption=f"🧾 Comprovante ({data_ab_str}) - Clique para ampliar",
-                                            width=120,
-                                        )
-                                else:
-                                    val_comp_str = str(comprovante_img).strip()
-                                    if val_comp_str and val_comp_str.lower() not in ["none", "nan", "nat", ""]:
-                                        st.image(
-                                            comprovante_img,
-                                            caption=f"🧾 Comprovante ({data_ab_str}) - Clique para ampliar",
-                                            width=120,
-                                        )
-                            except Exception:
-                                pass
+                        litros_ab = ab_row.get(col_litros_abast, 0) if col_litros_abast else 0
+                        valor_ab = ab_row.get(col_valor_abast, 0) if col_valor_abast else 0
+                        
+                        col_km_item = next(
+                            (c for c in ["km", "quilometragem", "odometro", "km_atual"] if c in ab_row),
+                            None
+                        )
+                        km_ab = ab_row.get(col_km_item, "N/A") if col_km_item else "N/A"
+
+                        # Renderiza cada abastecimento com os seus dados e a respetiva foto dentro do card
+                        with st.container():
+                            st.markdown(
+                                f"""
+                                <div class="abast-card">
+                                    <div class="abast-header">⛽ {placa} - {modelo}</div>
+                                    <div class="abast-info">Data e Hora: <span>{data_ab}</span></div>
+                                    <div class="abast-info">Quilometragem: <span>{km_ab} km</span></div>
+                                    <div class="abast-info">Litros: <span>{litros_ab} L</span></div>
+                                    <div class="abast-info">Valor: <span>R$ {valor_ab}</span></div>
+                                </div>
+                            """,
+                                unsafe_allow_html=True,
+                            )
+
+                            if col_comprovante_abast:
+                                comprovante_img = ab_row.get(col_comprovante_abast)
+                                if comprovante_img is not None:
+                                    try:
+                                        if isinstance(comprovante_img, memoryview):
+                                            comprovante_img = bytes(comprovante_img)
+
+                                        if isinstance(comprovante_img, bytes):
+                                            if len(comprovante_img) > 0:
+                                                img_obj = Image.open(io.BytesIO(comprovante_img))
+                                                st.image(
+                                                    img_obj,
+                                                    caption=f"🧾 Comprovante ({data_ab}) - Clique para ampliar",
+                                                    width=140,
+                                                )
+                                        else:
+                                            val_comp_str = str(comprovante_img).strip()
+                                            if val_comp_str and val_comp_str.lower() not in ["none", "nan", "nat", ""]:
+                                                st.image(
+                                                    comprovante_img,
+                                                    caption=f"🧾 Comprovante ({data_ab}) - Clique para ampliar",
+                                                    width=140,
+                                                )
+                                    except Exception:
+                                        pass
 
     with tab_rodizio:
         st.markdown("##### 🚘 Consulta de Rodízio de Veículos (SP)")
