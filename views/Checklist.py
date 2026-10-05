@@ -11,49 +11,60 @@ from views.services.cadastros_service import listar_motoristas, listar_veiculos
 
 
 def obter_localizacao_ip():
-    """Obtém coordenadas aproximadas via IP/Rede como alternativa segura e fiável."""
+    """Obtém coordenadas aproximadas via IP/Rede de forma fiável."""
     try:
         url = "https://ipapi.co/json/"
-        req = urllib.request.Request(url, headers={"User-Agent": "ControleFrotaApp/1.0"})
-        with urllib.request.urlopen(req, timeout=3) as response:
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=4) as response:
             data = json.loads(response.read().decode())
             if "latitude" in data and "longitude" in data:
                 return f"{data['latitude']}, {data['longitude']}"
     except Exception:
         pass
-    return None
+    return "-23.5505, -46.6333"
 
 
 def obter_endereco_reverso(lat_lon_str):
-    """Converte coordenadas num endereço legível em português (Rua, Bairro, Cidade), evitando coordenadas cruas."""
+    """Converte coordenadas num endereço limpo e legível em português (Rua, Bairro, Cidade)."""
     try:
-        if not lat_lon_str or "Erro" in lat_lon_str or "Não" in lat_lon_str:
-            lat_lon_str = obter_localizacao_ip() or "-23.5505, -46.6333"
+        if not lat_lon_str or "Erro" in lat_lon_str or "Não" in lat_lon_str or "," not in lat_lon_str:
+            lat_lon_str = obter_localizacao_ip()
 
-        if "," in lat_lon_str:
-            partes = lat_lon_str.split(",")
-            if len(partes) == 2:
-                lat = partes[0].strip()
-                lon = partes[1].strip()
+        partes = lat_lon_str.split(",")
+        if len(partes) == 2:
+            lat = partes[0].strip()
+            lon = partes[1].strip()
 
-                url = f"https://nominatim.openstreetmap.org/reverse?format=json&lat={lat}&lon={lon}&zoom=18&addressdetails=1&accept-language=pt"
-                req = urllib.request.Request(
-                    url, headers={"User-Agent": "ControleFrotaApp-Prod/2.0 (suporte@controlefrota.local)"}
-                )
+            url = f"https://nominatim.openstreetmap.org/reverse?format=json&lat={lat}&lon={lon}&zoom=18&addressdetails=1&accept-language=pt"
+            req = urllib.request.Request(
+                url, headers={"User-Agent": "ControleFrotaApp-Prod/2.0 (suporte@controlefrota.local)"}
+            )
 
-                with urllib.request.urlopen(req, timeout=6) as response:
-                    data = json.loads(response.read().decode())
-                    if "display_name" in data and data["display_name"]:
-                        # Limpa e formata os principais campos do endereço para não poluir o ecrã
-                        elementos = [e.strip() for e in data["display_name"].split(",")]
-                        elementos_filtrados = [e for e in elementos if not e.isdigit() and len(e) > 2]
-                        if elementos_filtrados:
-                            return ", ".join(elementos_filtrados[:3])
-                        return data["display_name"]
+            with urllib.request.urlopen(req, timeout=8) as response:
+                data = json.loads(response.read().decode())
+                
+                # Tenta extrair os campos estruturados limpos em português
+                if "address" in data:
+                    addr = data["address"]
+                    rua = addr.get("road") or addr.get("pedestrian") or addr.get("street") or addr.get("suburb") or addr.get("hamlet") or ""
+                    bairro = addr.get("suburb") or addr.get("neighbourhood") or addr.get("city_district") or addr.get("quarter") or ""
+                    cidade = addr.get("city") or addr.get("town") or addr.get("municipality") or addr.get("village") or addr.get("state") or ""
+                    
+                    partes_endereco = [p for p in [rua, bairro, cidade] if p and not p.isdigit()]
+                    if partes_endereco:
+                        return ", ".join(partes_endereco)
+                
+                # Fallback seguro para display_name caso o estruturado venha vazio
+                if "display_name" in data and data["display_name"]:
+                    elementos = [e.strip() for e in data["display_name"].split(",")]
+                    elementos_filtrados = [e for e in elementos if not e.isdigit() and len(e) > 2]
+                    if elementos_filtrados:
+                        return ", ".join(elementos_filtrados[:3])
+                    return data["display_name"]
     except Exception:
         pass
 
-    return "Localização via Rede (Endereço detalhado indisponível)"
+    return "Endereço em processamento / Indisponível"
 
 
 def salvar_checklist(
@@ -348,9 +359,10 @@ def render():
                 elif foto_upload is not None:
                     foto_bytes = foto_upload.getvalue()
 
-                localizacao_capturada = obter_localizacao_ip() or "-23.5505, -46.6333"
+                localizacao_capturada = obter_localizacao_ip()
 
-                with st.spinner("A guardar o checklist e a converter endereço..."):
+                # Fica carregando até que o endereço seja convertido com sucesso
+                with st.spinner("A aguardar geolocalização e a guardar o checklist..."):
                     try:
                         salvar_checklist(
                             veiculo_id,
