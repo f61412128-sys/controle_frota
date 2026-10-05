@@ -353,8 +353,8 @@ def render_dashboard(contar_registros_fn=None):
                 raw_data = ult_chk.get(col_data) if col_data else None
                 
                 if isinstance(raw_data, datetime.datetime):
-                    # Ajusta o desfasamento UTC (-3h) para coincidir exatamente com a hora do checklist
-                    raw_data_ajustado = raw_data - datetime.timedelta(hours=3)
+                    # Adiciona 3 horas para corrigir o fuso horário para a hora correta
+                    raw_data_ajustado = raw_data + datetime.timedelta(hours=3)
                     data_formatada = raw_data_ajustado.strftime("%d/%m/%Y %H:%M")
                 elif raw_data and str(raw_data).strip() not in [
                     "",
@@ -364,7 +364,7 @@ def render_dashboard(contar_registros_fn=None):
                     data_str = str(raw_data).strip()
                     try:
                         dt_parsed = pd.to_datetime(data_str)
-                        dt_ajustado = dt_parsed - pd.Timedelta(hours=3)
+                        dt_ajustado = dt_parsed + pd.Timedelta(hours=3)
                         data_formatada = dt_ajustado.strftime("%d/%m/%Y %H:%M")
                     except Exception:
                         data_formatada = (
