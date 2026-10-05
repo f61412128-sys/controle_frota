@@ -25,25 +25,35 @@ def obter_localizacao_ip():
 
 
 def obter_endereco_reverso(lat_lon_str):
-    """Converte coordenadas (latitude, longitude) num endereço legível completo (Rua, Cidade, etc.) via Nominatim."""
+    """Converte coordenadas num endereço limpo e legível (Rua, Bairro, Cidade) via Nominatim."""
     try:
         if not lat_lon_str or "Erro" in lat_lon_str or "Não" in lat_lon_str:
             lat_lon_str = obter_localizacao_ip() or "-23.5505, -46.6333"
 
-        # Se vierem coordenadas separadas por vírgula, fazemos a consulta à API de geocodificação reversa
         if "," in lat_lon_str:
             partes = lat_lon_str.split(",")
             if len(partes) == 2:
                 lat = partes[0].strip()
                 lon = partes[1].strip()
 
+                # User-Agent obrigatório e válido para evitar bloqueios da API Nominatim
                 url = f"https://nominatim.openstreetmap.org/reverse?format=json&lat={lat}&lon={lon}&zoom=18&addressdetails=1"
                 req = urllib.request.Request(
-                    url, headers={"User-Agent": "ControleFrotaApp/1.0"}
+                    url, headers={"User-Agent": "ControleFrotaApp-Prod/2.0 (suporte@controlefrota.local)"}
                 )
 
-                with urllib.request.urlopen(req, timeout=5) as response:
+                with urllib.request.urlopen(req, timeout=6) as response:
                     data = json.loads(response.read().decode())
+                    if "address" in data:
+                        addr = data["address"]
+                        rua = addr.get("road") or addr.get("pedestrian") or addr.get("street") or addr.get("suburb") or ""
+                        bairro = addr.get("suburb") or addr.get("neighbourhood") or addr.get("city_district") or ""
+                        cidade = addr.get("city") or addr.get("town") or addr.get("municipality") or addr.get("state") or ""
+                        
+                        partes_endereco = [p for p in [rua, bairro, cidade] if p]
+                        if partes_endereco:
+                            return ", ".join(partes_endereco)
+                            
                     if "display_name" in data:
                         return data["display_name"]
     except Exception:
@@ -66,7 +76,6 @@ def salvar_checklist(
     if not localizacao or "não" in localizacao.lower() or "," not in localizacao:
         localizacao = obter_localizacao_ip() or "-23.5505, -46.6333"
 
-    # Converte explicitamente as coordenadas em morada detalhada (Rua, etc.)
     localizacao_amigavel = obter_endereco_reverso(localizacao)
     
     fuso_brasilia = datetime.timezone(datetime.timedelta(hours=-3))
@@ -347,7 +356,7 @@ def render():
 
                 localizacao_capturada = obter_localizacao_ip() or "-23.5505, -46.6333"
 
-                with st.spinner("A guardar o checklist e a processar morada..."):
+                with st.spinner("A guardar o checklist e a converter endereço..."):
                     try:
                         salvar_checklist(
                             veiculo_id,
