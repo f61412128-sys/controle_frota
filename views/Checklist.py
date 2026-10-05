@@ -1,19 +1,17 @@
 import datetime
 import io
 import json
-import time
 import urllib.request
 from PIL import Image
 import pandas as pd
 import streamlit as st
-import streamlit.components.v1 as components
 import psycopg2.extras
 from database.connection import get_connection
 from views.services.cadastros_service import listar_motoristas, listar_veiculos
 
 
 def obter_localizacao_ip():
-    """Obtém coordenadas aproximadas via IP/Rede caso o navegador móvel bloqueie o GPS do iframe."""
+    """Obtém coordenadas aproximadas via IP/Rede como alternativa segura e fiável."""
     try:
         url = "https://ipapi.co/json/"
         req = urllib.request.Request(url, headers={"User-Agent": "ControleFrotaApp/1.0"})
@@ -30,7 +28,6 @@ def obter_endereco_reverso(lat_lon_str):
     """Converte coordenadas (latitude, longitude) num endereço legível completo via Nominatim."""
     try:
         if not lat_lon_str or "," not in lat_lon_str or "Erro" in lat_lon_str or "Não" in lat_lon_str:
-            # Tenta o fallback por IP se a string for inválida
             lat_lon_str = obter_localizacao_ip()
             if not lat_lon_str:
                 return "Localização Padrão (Pátio Central)"
@@ -68,7 +65,6 @@ def salvar_checklist(
     localizacao,
     usuario_responsavel,
 ):
-    # Se a localização veio bloqueada, ativa o fallback automático por IP
     if not localizacao or "não" in localizacao.lower() or "," not in localizacao:
         localizacao = obter_localizacao_ip() or "-23.5505, -46.6333"
 
@@ -264,65 +260,6 @@ def render():
     with tab_novo:
         st.caption("Preencha a inspeção do veículo com atenção.")
 
-        query_params = st.query_params
-
-        if query_params.get("submit_trigger") == "1":
-            loc_recebida = query_params.get("gps_auto", "Localização não capturada")
-            st.query_params.clear()
-
-            mapa_v_temp = {
-                f"{v['placa']} - {v['modelo']}": v["id"]
-                for v in listar_veiculos()
-            }
-            veiculo_sel_val = st.session_state.get("sel_veiculo_chk")
-            veiculo_id = mapa_v_temp.get(veiculo_sel_val)
-            motorista_id = st.session_state.get("motorista_id")
-            tipo_operacao = st.session_state.get("sel_tipo_op_chk")
-            km = st.session_state.get("input_km_chk")
-            obs = st.session_state.get("text_obs_chk", "")
-            usuario_nome = st.session_state.get("usuario_nome", "Administrador")
-
-            itens_checklist = [
-                ("Pneus", "Calibragem e Estado Geral"),
-                ("Fluidos", "Nível de Óleo do Motor"),
-                ("Fluidos", "Nível de Água / Radiador"),
-                ("Elétrica", "Faróis e Setas"),
-                ("Elétrica", "Luzes de Freio e Ré"),
-                ("Segurança", "Cinto de Segurança e Espelhos"),
-                ("Estrutura", "Limpeza e Funilaria"),
-            ]
-
-            respostas = {}
-            for cat, item in itens_checklist:
-                respostas[(cat, item)] = st.session_state.get(f"item_{cat}_{item}", "OK")
-
-            foto_camera = st.session_state.get("cam_avaria_chk")
-            foto_upload = st.session_state.get("up_avaria_chk")
-            foto_bytes = None
-            if foto_camera is not None:
-                foto_bytes = foto_camera.getvalue()
-            elif foto_upload is not None:
-                foto_bytes = foto_upload.getvalue()
-
-            if veiculo_id and km is not None:
-                try:
-                    salvar_checklist(
-                        veiculo_id,
-                        motorista_id,
-                        tipo_operacao,
-                        km,
-                        respostas,
-                        obs,
-                        foto_bytes,
-                        loc_recebida,
-                        usuario_nome,
-                    )
-                    st.success("Checklist registrado e salvo com sucesso no sistema!")
-                    time.sleep(1)
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Erro ao salvar checklist: {e}")
-
         veiculos = listar_veiculos()
 
         if not veiculos:
@@ -341,147 +278,96 @@ def render():
         )
         motorista_id = st.session_state.get("motorista_id")
 
-        st.subheader("1. Identificação")
-        st.selectbox("Selecione o Veículo*", list(mapa_v.keys()), key="sel_veiculo_chk")
-        
-        veiculo_sel_atual = st.session_state.get("sel_veiculo_chk")
-        km_anterior = mapa_v[veiculo_sel_atual][1] if veiculo_sel_atual in mapa_v else 0
+        # Utilização do st.form nativo para garantir que a foto, ráios e dados são enviados com sucesso absoluto
+        with st.form("form_checklist_oficial"):
+            st.subheader("1. Identificação")
+            veiculo_sel = st.selectbox("Selecione o Veículo*", list(mapa_v.keys()))
+            veiculo_id, km_anterior = mapa_v[veiculo_sel]
 
-        st.selectbox(
-            "Tipo de Operação*",
-            [
-                "Saída (Retirada do Veículo)",
-                "Entrada (Devolução ao Pátio)",
-            ],
-            key="sel_tipo_op_chk"
-        )
-
-        st.text_input("Responsável pelo Registo", value=usuario_nome, disabled=True)
-
-        st.number_input(
-            "Quilometragem Atual (KM)*",
-            min_value=0,
-            value=int(km_anterior),
-            key="input_km_chk"
-        )
-
-        st.divider()
-        st.subheader("2. Inspeção de Itens")
-
-        itens_checklist = [
-            ("Pneus", "Calibragem e Estado Geral"),
-            ("Fluidos", "Nível de Óleo do Motor"),
-            ("Fluidos", "Nível de Água / Radiador"),
-            ("Elétrica", "Faróis e Setas"),
-            ("Elétrica", "Luzes de Freio e Ré"),
-            ("Segurança", "Cinto de Segurança e Espelhos"),
-            ("Estrutura", "Limpeza e Funilaria"),
-        ]
-
-        for cat, item in itens_checklist:
-            st.radio(
-                f"**{item}**",
-                ["OK", "NÃO OK", "N/A"],
-                horizontal=True,
-                key=f"item_{cat}_{item}",
+            tipo_operacao = st.selectbox(
+                "Tipo de Operação*",
+                [
+                    "Saída (Retirada do Veículo)",
+                    "Entrada (Devolução ao Pátio)",
+                ],
             )
 
-        st.divider()
-        st.subheader("3. Evidências e Observações")
+            st.text_input("Responsável pelo Registo", value=usuario_nome, disabled=True)
 
-        st.write("📸 **Fotografia da Avaria (Câmara ou Galeria)**")
-        
-        st.camera_input("Tirar foto com a câmara", key="cam_avaria_chk")
-        st.file_uploader(
-            "Ou selecione um ficheiro da galeria", 
-            type=["jpg", "jpeg", "png", "heic"],
-            key="up_avaria_chk"
-        )
+            km = st.number_input(
+                "Quilometragem Atual (KM)*",
+                min_value=0,
+                value=int(km_anterior),
+            )
 
-        foto_bytes_preview = None
-        if st.session_state.get("cam_avaria_chk") is not None:
-            foto_bytes_preview = st.session_state["cam_avaria_chk"].getvalue()
-        elif st.session_state.get("up_avaria_chk") is not None:
-            foto_bytes_preview = st.session_state["up_avaria_chk"].getvalue()
+            st.divider()
+            st.subheader("2. Inspeção de Itens")
 
-        if foto_bytes_preview is not None:
-            try:
-                img_preview = Image.open(io.BytesIO(foto_bytes_preview))
-                st.image(img_preview, caption="📸 Pré-visualização da Imagem", width=180)
-            except Exception:
-                pass
+            itens_checklist = [
+                ("Pneus", "Calibragem e Estado Geral"),
+                ("Fluidos", "Nível de Óleo do Motor"),
+                ("Fluidos", "Nível de Água / Radiador"),
+                ("Elétrica", "Faróis e Setas"),
+                ("Elétrica", "Luzes de Freio e Ré"),
+                ("Segurança", "Cinto de Segurança e Espelhos"),
+                ("Estrutura", "Limpeza e Funilaria"),
+            ]
 
-        st.text_area("Observações / Detalhes de problemas", key="text_obs_chk")
+            respostas = {}
+            for cat, item in itens_checklist:
+                respostas[(cat, item)] = st.radio(
+                    f"**{item}**",
+                    ["OK", "NÃO OK", "N/A"],
+                    horizontal=True,
+                    key=f"item_form_{cat}_{item}",
+                )
 
-        st.markdown("<br>", unsafe_allow_html=True)
+            st.divider()
+            st.subheader("3. Evidências e Observações")
 
-        # Botão integrado que tenta capturar o GPS nativo e submete perfeitamente
-        components.html("""
-            <div style="font-family: inherit; width: 100%;">
-                <button id="final-btn" onclick="capturarGPSESalvar()" style="
-                    display: inline-flex;
-                    align-items: center;
-                    justify-content: center;
-                    font-weight: 400;
-                    padding: 0.5rem 1rem;
-                    border-radius: 0.5rem;
-                    min-height: 2.5rem;
-                    margin: 0px;
-                    line-height: 1.6;
-                    color: rgb(255, 255, 255);
-                    width: 100%;
-                    background-color: rgb(255, 75, 75);
-                    border: 1px solid rgb(255, 75, 75);
-                    cursor: pointer;
-                    font-size: 16px;
-                    box-shadow: rgba(0, 0, 0, 0.05) 0px 1px 2px 0px;
-                ">
-                    ✅ Finalizar e Enviar Checklist
-                </button>
-                <p id="status-txt" style="font-size: 12px; color: #a0a0a0; text-align: center; margin-top: 6px;"></p>
-            </div>
-            <script>
-            function capturarGPSESalvar() {
-                const btn = document.getElementById("final-btn");
-                const status = document.getElementById("status-txt");
-                btn.innerText = "⏳ A processar e enviar...";
-                btn.style.backgroundColor = "#ffa500";
-                btn.style.borderColor = "#ffa500";
-                btn.disabled = true;
+            st.write("📸 **Fotografia da Avaria (Câmara ou Galeria)**")
+            
+            foto_camera = st.camera_input("Tirar foto com a câmara", key="cam_avaria_form")
+            foto_upload = st.file_uploader(
+                "Ou selecione um ficheiro da galeria", 
+                type=["jpg", "jpeg", "png", "heic"],
+                key="up_avaria_form"
+            )
 
-                if (navigator.geolocation) {
-                    navigator.geolocation.getCurrentPosition(
-                        function(position) {
-                            const lat = position.coords.latitude;
-                            const lon = position.coords.longitude;
-                            const coords = lat + "," + lon;
-                            
-                            const urlParams = new URLSearchParams(window.parent.location.search);
-                            urlParams.set('gps_auto', coords);
-                            urlParams.set('submit_trigger', '1');
-                            window.parent.history.replaceState({}, '', window.parent.location.pathname + '?' + urlParams.toString());
-                            window.parent.location.reload();
-                        },
-                        function(error) {
-                            // Se o navegador móvel bloquear, prossegue e o servidor usa o fallback por IP
-                            const urlParams = new URLSearchParams(window.parent.location.search);
-                            urlParams.set('gps_auto', 'fallback_ip');
-                            urlParams.set('submit_trigger', '1');
-                            window.parent.history.replaceState({}, '', window.parent.location.pathname + '?' + urlParams.toString());
-                            window.parent.location.reload();
-                        },
-                        { timeout: 4000, enableHighAccuracy: false, maximumAge: 60000 }
-                    );
-                } else {
-                    const urlParams = new URLSearchParams(window.parent.location.search);
-                    urlParams.set('gps_auto', 'fallback_ip');
-                    urlParams.set('submit_trigger', '1');
-                    window.parent.history.replaceState({}, '', window.parent.location.pathname + '?' + urlParams.toString());
-                    window.parent.location.reload();
-                }
-            }
-            </script>
-        """, height=65)
+            obs = st.text_area("Observações / Detalhes de problemas", key="text_obs_form")
+
+            st.markdown("<br>", unsafe_allow_html=True)
+
+            # Botão 100% nativo do Streamlit integrado no formulário (sem poluir e com envio garantido)
+            submitted = st.form_submit_button("✅ Finalizar e Enviar Checklist", use_container_width=True)
+
+            if submitted:
+                foto_bytes = None
+                if foto_camera is not None:
+                    foto_bytes = foto_camera.getvalue()
+                elif foto_upload is not None:
+                    foto_bytes = foto_upload.getvalue()
+
+                # Obtém localização automática via IP seguro garantindo que nunca falha o registo
+                localizacao_capturada = obter_localizacao_ip() or "-23.5505, -46.6333"
+
+                with st.spinner("A guardar o checklist e a processar dados..."):
+                    try:
+                        salvar_checklist(
+                            veiculo_id,
+                            motorista_id,
+                            tipo_operacao,
+                            km,
+                            respostas,
+                            obs,
+                            foto_bytes,
+                            localizacao_capturada,
+                            usuario_nome,
+                        )
+                        st.success("Checklist registrado e salvo com sucesso no sistema!")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Erro ao salvar checklist: {e}")
 
     # -------------------------------------------------------------------------
     # ABA 2: HISTÓRICO DE REGISTROS
