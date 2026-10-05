@@ -25,7 +25,7 @@ def obter_localizacao_ip():
 
 
 def obter_endereco_reverso(lat_lon_str):
-    """Converte coordenadas num endereço limpo, legível e em português (Rua, Bairro, Cidade) via Nominatim."""
+    """Converte coordenadas num endereço legível em português (Rua, Bairro, Cidade), evitando coordenadas cruas."""
     try:
         if not lat_lon_str or "Erro" in lat_lon_str or "Não" in lat_lon_str:
             lat_lon_str = obter_localizacao_ip() or "-23.5505, -46.6333"
@@ -36,7 +36,6 @@ def obter_endereco_reverso(lat_lon_str):
                 lat = partes[0].strip()
                 lon = partes[1].strip()
 
-                # Adicionado &accept-language=pt para retornar o endereço em português
                 url = f"https://nominatim.openstreetmap.org/reverse?format=json&lat={lat}&lon={lon}&zoom=18&addressdetails=1&accept-language=pt"
                 req = urllib.request.Request(
                     url, headers={"User-Agent": "ControleFrotaApp-Prod/2.0 (suporte@controlefrota.local)"}
@@ -44,22 +43,17 @@ def obter_endereco_reverso(lat_lon_str):
 
                 with urllib.request.urlopen(req, timeout=6) as response:
                     data = json.loads(response.read().decode())
-                    if "address" in data:
-                        addr = data["address"]
-                        rua = addr.get("road") or addr.get("pedestrian") or addr.get("street") or addr.get("suburb") or ""
-                        bairro = addr.get("suburb") or addr.get("neighbourhood") or addr.get("city_district") or ""
-                        cidade = addr.get("city") or addr.get("town") or addr.get("municipality") or addr.get("state") or ""
-                        
-                        partes_endereco = [p for p in [rua, bairro, cidade] if p]
-                        if partes_endereco:
-                            return ", ".join(partes_endereco)
-                            
-                    if "display_name" in data:
+                    if "display_name" in data and data["display_name"]:
+                        # Limpa e formata os principais campos do endereço para não poluir o ecrã
+                        elementos = [e.strip() for e in data["display_name"].split(",")]
+                        elementos_filtrados = [e for e in elementos if not e.isdigit() and len(e) > 2]
+                        if elementos_filtrados:
+                            return ", ".join(elementos_filtrados[:3])
                         return data["display_name"]
     except Exception:
         pass
 
-    return lat_lon_str
+    return "Localização via Rede (Endereço detalhado indisponível)"
 
 
 def salvar_checklist(
