@@ -124,39 +124,45 @@ def ler_tabela_direta(query):
 def render_dashboard(contar_registros_fn=None):
     st.title("📊 Painel Geral da Frota")
 
-    df_tables = ler_tabela_direta(
-        "SELECT table_name FROM information_schema.tables WHERE table_schema='public';"
-    )
-    tabelas_existentes = (
-        df_tables["table_name"].tolist() if not df_tables.empty else []
-    )
+    # Leitura direta e segura das tabelas (compatível com SQLite e PostgreSQL)
+    df_veiculos = pd.DataFrame()
+    for t in ["veiculos", "veículo"]:
+        df_temp = ler_tabela_direta(f"SELECT * FROM {t}")
+        if not df_temp.empty:
+            df_veiculos = df_temp
+            break
 
-    df_veiculos = (
-        ler_tabela_direta("SELECT * FROM veiculos")
-        if "veiculos" in tabelas_existentes
-        else pd.DataFrame()
-    )
-    df_manutencoes = (
-        ler_tabela_direta("SELECT * FROM manutencoes")
-        if "manutencoes" in tabelas_existentes
-        else pd.DataFrame()
-    )
-    df_motoristas = (
-        ler_tabela_direta("SELECT * FROM motoristas")
-        if "motoristas" in tabelas_existentes
-        else pd.DataFrame()
-    )
-    df_usuarios = (
-        ler_tabela_direta("SELECT * FROM usuarios")
-        if "usuarios" in tabelas_existentes
-        else pd.DataFrame()
-    )
+    df_manutencoes = pd.DataFrame()
+    for t in ["manutencoes", "manutencao"]:
+        df_temp = ler_tabela_direta(f"SELECT * FROM {t}")
+        if not df_temp.empty:
+            df_manutencoes = df_temp
+            break
+
+    df_motoristas = pd.DataFrame()
+    for t in ["motoristas", "motorista"]:
+        df_temp = ler_tabela_direta(f"SELECT * FROM {t}")
+        if not df_temp.empty:
+            df_motoristas = df_temp
+            break
+
+    df_usuarios = pd.DataFrame()
+    for t in ["usuarios", "usuario"]:
+        df_temp = ler_tabela_direta(f"SELECT * FROM {t}")
+        if not df_temp.empty:
+            df_usuarios = df_temp
+            break
 
     df_ocorrencias = pd.DataFrame()
-    if "ocorrencias" in tabelas_existentes:
-        df_oc_cols = ler_tabela_direta("SELECT * FROM ocorrencias LIMIT 0")
-        cols_oc = df_oc_cols.columns.tolist() if not df_oc_cols.empty else []
+    for t_oc in ["ocorrencias", "ocorrencia", "incidentes", "problemas"]:
+        df_temp = ler_tabela_direta(f"SELECT * FROM {t_oc}")
+        if not df_temp.empty:
+            df_ocorrencias = df_temp
+            break
 
+    # Tratamento para garantir junções seguras nas ocorrências caso existam
+    if not df_ocorrencias.empty:
+        cols_oc = df_ocorrencias.columns.tolist()
         foto_oc_col = next(
             (
                 c
@@ -166,69 +172,66 @@ def render_dashboard(contar_registros_fn=None):
             None,
         )
         has_chk_id = "checklist_id" in cols_oc
-        has_chk_table = "checklists" in tabelas_existentes
 
-        if foto_oc_col and has_chk_id and has_chk_table:
-            query_ocorr = f"""
-                SELECT o.*, COALESCE(o.{foto_oc_col}, c.foto) as foto, v.placa, v.modelo 
-                FROM ocorrencias o
-                LEFT JOIN checklists c ON o.checklist_id = c.id
-                LEFT JOIN veiculos v ON o.veiculo_id = v.id
-                ORDER BY o.id DESC
-            """
-        elif foto_oc_col:
-            query_ocorr = f"""
-                SELECT o.*, o.{foto_oc_col} as foto, v.placa, v.modelo 
-                FROM ocorrencias o
-                LEFT JOIN veiculos v ON o.veiculo_id = v.id
-                ORDER BY o.id DESC
-            """
-        elif has_chk_id and has_chk_table:
-            query_ocorr = """
-                SELECT o.*, c.foto as foto, v.placa, v.modelo 
-                FROM ocorrencias o
-                LEFT JOIN checklists c ON o.checklist_id = c.id
-                LEFT JOIN veiculos v ON o.veiculo_id = v.id
-                ORDER BY o.id DESC
-            """
-        else:
-            query_ocorr = """
-                SELECT o.*, v.placa, v.modelo 
-                FROM ocorrencias o
-                LEFT JOIN veiculos v ON o.veiculo_id = v.id
-                ORDER BY o.id DESC
-            """
-        df_ocorrencias = ler_tabela_direta(query_ocorr)
-    else:
-        for t_oc in ["ocorrencia", "incidentes", "problemas"]:
-            if t_oc in tabelas_existentes:
-                df_ocorrencias = ler_tabela_direta(f"SELECT * FROM {t_oc}")
-                break
+        # Tenta enriquecer com joins se as tabelas relacionadas existirem
+        try:
+            if foto_oc_col and has_chk_id:
+                query_ocorr = f"""
+                    SELECT o.*, COALESCE(o.{foto_oc_col}, c.foto) as foto, v.placa, v.modelo 
+                    FROM ocorrencias o
+                    LEFT JOIN checklists c ON o.checklist_id = c.id
+                    LEFT JOIN veiculos v ON o.veiculo_id = v.id
+                    ORDER BY o.id DESC
+                """
+                df_temp_join = ler_tabela_direta(query_ocorr)
+                if not df_temp_join.empty:
+                    df_ocorrencias = df_temp_join
+            elif foto_oc_col:
+                query_ocorr = f"""
+                    SELECT o.*, o.{foto_oc_col} as foto, v.placa, v.modelo 
+                    FROM ocorrencias o
+                    LEFT JOIN veiculos v ON o.veiculo_id = v.id
+                    ORDER BY o.id DESC
+                """
+                df_temp_join = ler_tabela_direta(query_ocorr)
+                if not df_temp_join.empty:
+                    df_ocorrencias = df_temp_join
+        except Exception:
+            pass
 
     df_abastecimentos = pd.DataFrame()
     for t_abast in ["abastecimentos", "abastecimento", "combustivel"]:
-        if t_abast in tabelas_existentes:
-            df_temp = ler_tabela_direta(f"SELECT * FROM {t_abast}")
-            if not df_temp.empty:
-                df_abastecimentos = df_temp
-                break
+        df_temp = ler_tabela_direta(f"SELECT * FROM {t_abast}")
+        if not df_temp.empty:
+            df_abastecimentos = df_temp
+            break
 
     df_checklists = pd.DataFrame()
     for t in ["checklists", "checklist", "historico_checklists", "inspecoes"]:
-        if t in tabelas_existentes:
-            df_temp = ler_tabela_direta(f"SELECT * FROM {t}")
-            if not df_temp.empty:
-                df_checklists = df_temp
-                break
+        df_temp = ler_tabela_direta(f"SELECT * FROM {t}")
+        if not df_temp.empty:
+            df_checklists = df_temp
+            break
 
     if df_checklists.empty:
-        for t in tabelas_existentes:
-            df_temp = ler_tabela_direta(f"SELECT * FROM {t}")
-            if not df_temp.empty and any(
-                k in t.lower() for k in ["check", "insp", "vist"]
-            ):
-                df_checklists = df_temp
-                break
+        # Busca genérica por aproximação de nome de checklist se necessário
+        conn = get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT name FROM sqlite_master WHERE type='table';"
+            )
+            tables = [row[0] for row in cursor.fetchall()]
+            cursor.close()
+            conn.close()
+            for t in tables:
+                if any(k in t.lower() for k in ["check", "insp", "vist"]):
+                    df_temp = ler_tabela_direta(f"SELECT * FROM {t}")
+                    if not df_temp.empty:
+                        df_checklists = df_temp
+                        break
+        except Exception:
+            pass
 
     if not df_veiculos.empty:
         status_list = []
@@ -462,11 +465,10 @@ def render_dashboard(contar_registros_fn=None):
         "gestao_contratos",
         "veiculos_contratos",
     ]:
-        if t_c in tabelas_existentes:
-            df_temp = ler_tabela_direta(f"SELECT * FROM {t_c}")
-            if not df_temp.empty:
-                df_contratos = df_temp
-                break
+        df_temp = ler_tabela_direta(f"SELECT * FROM {t_c}")
+        if not df_temp.empty:
+            df_contratos = df_temp
+            break
 
     if not df_contratos.empty:
         col_venc = None
@@ -754,7 +756,6 @@ def render_dashboard(contar_registros_fn=None):
                         )
                     df_abast_v = df_abastecimentos[mask_v].copy()
 
-                    # Ordenar para mostrar os abastecimentos mais recentes primeiro (por ID decrescente ou data decrescente)
                     if not df_abast_v.empty:
                         sort_col = (
                             "id"
@@ -793,7 +794,6 @@ def render_dashboard(contar_registros_fn=None):
                                 dt_ab = pd.to_datetime(
                                     ab_row.get(col_data_abast)
                                 )
-                                # Ajuste de fuso horário (-3h) para alinhar com os checklists e hora local correta
                                 dt_ab_ajustado = dt_ab - pd.Timedelta(
                                     hours=3
                                 )
