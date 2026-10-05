@@ -27,7 +27,6 @@ def salvar_abastecimento(veiculo_id, km, litros, valor, foto_bytes, usuario):
         )
         conn.commit()
 
-        # Grava a hora local exata para alinhar com os checklists
         agora_local = datetime.datetime.now()
 
         cursor.execute(
@@ -54,8 +53,8 @@ def render():
     )
 
     with tab_novo:
-        st.caption("Registe o abastecimento e envie o comprovante.")[cite: 1]
-        veiculos = listar_veiculos()[cite: 1]
+        st.caption("Registe o abastecimento e envie o comprovante.")
+        veiculos = listar_veiculos()
 
         if not veiculos:
             st.warning(
@@ -157,7 +156,7 @@ def render():
                 st.error(f"Erro ao salvar abastecimento: {e}")
 
     with tab_hist:
-        st.subheader("Histórico de Consumo e Abastecimentos")[cite: 1]
+        st.subheader("Histórico de Consumo e Abastecimentos")
         conn = get_connection()
         try:
             query = """
@@ -180,7 +179,6 @@ def render():
                 st.info("Nenhum abastecimento registado até o momento.")
             else:
                 for _, row in df.iterrows():
-                    # Tratamento e formatação da data para corresponder aos checklists
                     raw_data = row["created_at"]
                     if pd.notna(raw_data):
                         try:
