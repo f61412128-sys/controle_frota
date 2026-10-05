@@ -25,7 +25,7 @@ def obter_localizacao_ip():
 
 
 def obter_endereco_reverso(lat_lon_str):
-    """Converte coordenadas num endereço limpo e legível (Rua, Bairro, Cidade) via Nominatim."""
+    """Converte coordenadas num endereço limpo, legível e em português (Rua, Bairro, Cidade) via Nominatim."""
     try:
         if not lat_lon_str or "Erro" in lat_lon_str or "Não" in lat_lon_str:
             lat_lon_str = obter_localizacao_ip() or "-23.5505, -46.6333"
@@ -36,8 +36,8 @@ def obter_endereco_reverso(lat_lon_str):
                 lat = partes[0].strip()
                 lon = partes[1].strip()
 
-                # User-Agent obrigatório e válido para evitar bloqueios da API Nominatim
-                url = f"https://nominatim.openstreetmap.org/reverse?format=json&lat={lat}&lon={lon}&zoom=18&addressdetails=1"
+                # Adicionado &accept-language=pt para retornar o endereço em português
+                url = f"https://nominatim.openstreetmap.org/reverse?format=json&lat={lat}&lon={lon}&zoom=18&addressdetails=1&accept-language=pt"
                 req = urllib.request.Request(
                     url, headers={"User-Agent": "ControleFrotaApp-Prod/2.0 (suporte@controlefrota.local)"}
                 )
