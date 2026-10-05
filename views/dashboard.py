@@ -752,7 +752,22 @@ def render_dashboard(contar_registros_fn=None):
                             .str.strip()
                             == placa.upper()
                         )
-                    df_abast_v = df_abastecimentos[mask_v]
+                    df_abast_v = df_abastecimentos[mask_v].copy()
+
+                    # Ordenar para mostrar os abastecimentos mais recentes primeiro (por ID decrescente ou data decrescente)
+                    if not df_abast_v.empty:
+                        sort_col = (
+                            "id"
+                            if "id" in df_abast_v.columns
+                            else col_data_abast
+                        )
+                        if sort_col:
+                            try:
+                                df_abast_v = df_abast_v.sort_values(
+                                    by=sort_col, ascending=False
+                                )
+                            except Exception:
+                                pass
 
                 if df_abast_v.empty:
                     st.markdown(
@@ -772,20 +787,51 @@ def render_dashboard(contar_registros_fn=None):
                             else "N/A"
                         )
                         try:
-                            if col_data_abast and pd.notna(ab_row.get(col_data_abast)):
-                                dt_ab = pd.to_datetime(ab_row.get(col_data_abast))
-                                data_ab = dt_ab.strftime("%d/%m/%Y %H:%M")
+                            if col_data_abast and pd.notna(
+                                ab_row.get(col_data_abast)
+                            ):
+                                dt_ab = pd.to_datetime(
+                                    ab_row.get(col_data_abast)
+                                )
+                                # Ajuste de fuso horário (-3h) para alinhar com os checklists e hora local correta
+                                dt_ab_ajustado = dt_ab - pd.Timedelta(
+                                    hours=3
+                                )
+                                data_ab = dt_ab_ajustado.strftime(
+                                    "%d/%m/%Y %H:%M"
+                                )
                         except Exception:
                             pass
 
-                        litros_ab = ab_row.get(col_litros_abast, 0) if col_litros_abast else 0
-                        valor_ab = ab_row.get(col_valor_abast, 0) if col_valor_abast else 0
-                        
-                        col_km_item = next(
-                            (c for c in ["km", "quilometragem", "odometro", "km_atual"] if c in ab_row),
-                            None
+                        litros_ab = (
+                            ab_row.get(col_litros_abast, 0)
+                            if col_litros_abast
+                            else 0
                         )
-                        km_ab = ab_row.get(col_km_item, "N/A") if col_km_item else "N/A"
+                        valor_ab = (
+                            ab_row.get(col_valor_abast, 0)
+                            if col_valor_abast
+                            else 0
+                        )
+
+                        col_km_item = next(
+                            (
+                                c
+                                for c in [
+                                    "km",
+                                    "quilometragem",
+                                    "odometro",
+                                    "km_atual",
+                                ]
+                                if c in ab_row
+                            ),
+                            None,
+                        )
+                        km_ab = (
+                            ab_row.get(col_km_item, "N/A")
+                            if col_km_item
+                            else "N/A"
+                        )
 
                         with st.container():
                             st.markdown(
@@ -802,23 +848,42 @@ def render_dashboard(contar_registros_fn=None):
                             )
 
                             if col_comprovante_abast:
-                                comprovante_img = ab_row.get(col_comprovante_abast)
+                                comprovante_img = ab_row.get(
+                                    col_comprovante_abast
+                                )
                                 if comprovante_img is not None:
                                     try:
-                                        if isinstance(comprovante_img, memoryview):
-                                            comprovante_img = bytes(comprovante_img)
+                                        if isinstance(
+                                            comprovante_img, memoryview
+                                        ):
+                                            comprovante_img = bytes(
+                                                comprovante_img
+                                            )
 
                                         if isinstance(comprovante_img, bytes):
                                             if len(comprovante_img) > 0:
-                                                img_obj = Image.open(io.BytesIO(comprovante_img))
+                                                img_obj = Image.open(
+                                                    io.BytesIO(comprovante_img)
+                                                )
                                                 st.image(
                                                     img_obj,
                                                     caption=f"🧾 Comprovante ({data_ab}) - Clique para ampliar",
                                                     width=140,
                                                 )
                                         else:
-                                            val_comp_str = str(comprovante_img).strip()
-                                            if val_comp_str and val_comp_str.lower() not in ["none", "nan", "nat", ""]:
+                                            val_comp_str = str(
+                                                comprovante_img
+                                            ).strip()
+                                            if (
+                                                val_comp_str
+                                                and val_comp_str.lower()
+                                                not in [
+                                                    "none",
+                                                    "nan",
+                                                    "nat",
+                                                    "",
+                                                ]
+                                            ):
                                                 st.image(
                                                     comprovante_img,
                                                     caption=f"🧾 Comprovante ({data_ab}) - Clique para ampliar",
@@ -954,9 +1019,12 @@ def render_dashboard(contar_registros_fn=None):
                     "valor", row.get("custo", row.get("preco", "0.00"))
                 )
                 m_data = row.get(
-                    "data", row.get("data_manutencao", row.get("created_at", "N/A"))
+                    "data",
+                    row.get("data_manutencao", row.get("created_at", "N/A")),
                 )
-                m_oficina = row.get("oficina", row.get("fornecedor", "Não informada"))
+                m_oficina = row.get(
+                    "oficina", row.get("fornecedor", "Não informada")
+                )
 
                 st.markdown(
                     f"""
@@ -1049,7 +1117,11 @@ def render_dashboard(contar_registros_fn=None):
                                 )
                         else:
                             val_str = str(foto_oc).strip()
-                            if val_str and val_str.lower() not in ["none", "nan", "nat", ""]:
+                            if (
+                                val_str
+                                and val_str.lower()
+                                not in ["none", "nan", "nat", ""]
+                            ):
                                 st.image(
                                     foto_oc,
                                     caption="🔍 Evidência / Foto da Ocorrência - Clique para ampliar",
