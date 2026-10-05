@@ -1,3 +1,4 @@
+import datetime
 import io
 import pandas as pd
 import streamlit as st
@@ -26,12 +27,15 @@ def salvar_abastecimento(veiculo_id, km, litros, valor, foto_bytes, usuario):
         )
         conn.commit()
 
+        # Grava a hora local exata para alinhar com os checklists
+        agora_local = datetime.datetime.now()
+
         cursor.execute(
             """
             INSERT INTO abastecimentos (veiculo_id, km, litros, valor, foto, usuario, created_at)
-            VALUES (%s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
         """,
-            (veiculo_id, km, litros, valor, foto_bytes, usuario),
+            (veiculo_id, km, litros, valor, foto_bytes, usuario, agora_local),
         )
         conn.commit()
     except Exception as e:
@@ -50,8 +54,8 @@ def render():
     )
 
     with tab_novo:
-        st.caption("Registe o abastecimento e envie o comprovante.")
-        veiculos = listar_veiculos()
+        st.caption("Registe o abastecimento e envie o comprovante.")[cite: 1]
+        veiculos = listar_veiculos()[cite: 1]
 
         if not veiculos:
             st.warning(
@@ -153,7 +157,7 @@ def render():
                 st.error(f"Erro ao salvar abastecimento: {e}")
 
     with tab_hist:
-        st.subheader("Histórico de Consumo e Abastecimentos")
+        st.subheader("Histórico de Consumo e Abastecimentos")[cite: 1]
         conn = get_connection()
         try:
             query = """
@@ -176,8 +180,22 @@ def render():
                 st.info("Nenhum abastecimento registado até o momento.")
             else:
                 for _, row in df.iterrows():
+                    # Tratamento e formatação da data para corresponder aos checklists
+                    raw_data = row["created_at"]
+                    if pd.notna(raw_data):
+                        try:
+                            dt_parsed = pd.to_datetime(raw_data)
+                            dt_ajustado = dt_parsed - pd.Timedelta(hours=3)
+                            data_formatada = dt_ajustado.strftime(
+                                "%d/%m/%Y %H:%M"
+                            )
+                        except Exception:
+                            data_formatada = str(raw_data)
+                    else:
+                        data_formatada = "N/A"
+
                     st.markdown(
-                        f"**ID:** {row['id']} | **Veículo:** {row['placa']} - {row['modelo']} | **KM:** {row['km']} | **Litros:** {row['litros']} | **Valor:** R$ {row['valor']} | **Data:** {row['created_at']}"
+                        f"**ID:** {row['id']} | **Veículo:** {row['placa']} - {row['modelo']} | **KM:** {row['km']} | **Litros:** {row['litros']} | **Valor:** R$ {row['valor']} | **Data:** {data_formatada}"
                     )
                     foto_db = row.get("foto")
                     if foto_db is not None:
