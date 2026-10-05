@@ -11,8 +11,8 @@ def salvar_abastecimento(veiculo_id, km, litros, valor, foto_bytes, usuario):
     conn = get_connection()
     cursor = conn.cursor()
     try:
-        # Cria a tabela de abastecimentos automaticamente caso não exista
-        cursor.execute("""
+        cursor.execute(
+            """
             CREATE TABLE IF NOT EXISTS abastecimentos (
                 id SERIAL PRIMARY KEY,
                 veiculo_id INT,
@@ -23,13 +23,17 @@ def salvar_abastecimento(veiculo_id, km, litros, valor, foto_bytes, usuario):
                 usuario TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
-        """)
+        """
+        )
         conn.commit()
 
-        cursor.execute("""
+        cursor.execute(
+            """
             INSERT INTO abastecimentos (veiculo_id, km, litros, valor, foto, usuario, created_at)
             VALUES (%s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
-        """, (veiculo_id, km, litros, valor, foto_bytes, usuario))
+        """,
+            (veiculo_id, km, litros, valor, foto_bytes, usuario),
+        )
         conn.commit()
     except Exception as e:
         conn.rollback()
@@ -42,63 +46,90 @@ def salvar_abastecimento(veiculo_id, km, litros, valor, foto_bytes, usuario):
 def render():
     st.title("⛽ Gestão de Abastecimentos")
 
-    tab_novo, tab_hist = st.tabs(["📝 Registar Abastecimento", "📊 Histórico de Consumo"])
+    tab_novo, tab_hist = st.tabs(
+        ["📝 Registar Abastecimento", "📊 Histórico de Consumo"]
+    )
 
     with tab_novo:
         st.caption("Registe o abastecimento e envie o comprovante.")
         veiculos = listar_veiculos()
-        
+
         if not veiculos:
-            st.warning("É necessário ter veículos cadastrados para registar abastecimentos.")
+            st.warning(
+                "É necessário ter veículos cadastrados para registar abastecimentos."
+            )
             return
 
         mapa_v = {f"{v['placa']} - {v['modelo']}": v["id"] for v in veiculos}
-        veiculo_sel = st.selectbox("Selecione o Veículo*", list(mapa_v.keys()))
+        veiculo_sel = st.selectbox(
+            "Selecione o Veículo*", list(mapa_v.keys())
+        )
         veiculo_id = mapa_v[veiculo_sel]
 
-        usuario = st.session_state.get("usuario_nome", st.session_state.get("usuario", "Motorista / Administrador"))
+        usuario = st.session_state.get(
+            "usuario_nome",
+            st.session_state.get("usuario", "Motorista / Administrador"),
+        )
 
         col1, col2 = st.columns(2)
         with col1:
-            km = st.number_input("Quilometragem Atual (KM)*", min_value=0.0, step=1.0)
+            km = st.number_input(
+                "Quilometragem Atual (KM)*", min_value=0.0, step=1.0
+            )
         with col2:
-            litros = st.number_input("Litros Abastecidos*", min_value=0.0, step=0.1)
+            litros = st.number_input(
+                "Litros Abastecidos*", min_value=0.0, step=0.1
+            )
 
-        valor = st.number_input("Valor Total Gasto (R$)*", min_value=0.0, step=0.01)
+        valor = st.number_input(
+            "Valor Total Gasto (R$)*", min_value=0.0, step=0.01
+        )
 
         st.divider()
         st.subheader("📸 Comprovante / Nota Fiscal")
-        
+
         tipo_envio = st.radio(
-            "Método de captura da foto:", 
-            ["Tirar Foto com a Câmara", "Carregar Imagem"], 
+            "Método de captura da foto:",
+            ["Tirar Foto com a Câmara", "Carregar Imagem"],
             horizontal=True,
-            key="tipo_envio_abastecimento"
+            key="tipo_envio_abastecimento",
         )
 
-        # Inicializa a chave de bytes na sessão se não existir
         if "abastecimento_foto_bytes" not in st.session_state:
             st.session_state["abastecimento_foto_bytes"] = None
 
         if tipo_envio == "Tirar Foto com a Câmara":
-            foto_cam = st.camera_input("Aponte para o comprovante de abastecimento", key="cam_abast")
+            foto_cam = st.camera_input(
+                "Aponte para o comprovante de abastecimento", key="cam_abast"
+            )
             if foto_cam is not None:
-                st.session_state["abastecimento_foto_bytes"] = foto_cam.getvalue()
+                st.session_state["abastecimento_foto_bytes"] = (
+                    foto_cam.getvalue()
+                )
         else:
             foto_arq = st.file_uploader(
-                "Carregar imagem do comprovante", 
-                type=["png", "jpg", "jpeg", "heic"], 
-                key="file_abast"
+                "Carregar imagem do comprovante",
+                type=["png", "jpg", "jpeg", "heic"],
+                key="file_abast",
             )
             if foto_arq is not None:
-                st.session_state["abastecimento_foto_bytes"] = foto_arq.getvalue()
+                st.session_state["abastecimento_foto_bytes"] = (
+                    foto_arq.getvalue()
+                )
 
-        # Pré-visualização persistente da imagem armazenada na sessão
         if st.session_state["abastecimento_foto_bytes"] is not None:
             try:
-                img_preview = Image.open(io.BytesIO(st.session_state["abastecimento_foto_bytes"]))
-                st.image(img_preview, caption="🧾 Pré-visualização do Comprovante Capturado", width=200)
-                if st.button("🗑 Limpar / Tirar Outra Foto", key="btn_limpar_foto_abast"):
+                img_preview = Image.open(
+                    io.BytesIO(st.session_state["abastecimento_foto_bytes"])
+                )
+                st.image(
+                    img_preview,
+                    caption="🧾 Pré-visualização do Comprovante Capturado",
+                    width=200,
+                )
+                if st.button(
+                    "🗑 Limpar / Tirar Outra Foto", key="btn_limpar_foto_abast"
+                ):
                     st.session_state["abastecimento_foto_bytes"] = None
                     st.rerun()
             except Exception:
@@ -108,12 +139,14 @@ def render():
 
         if st.button("✅ Salvar Abastecimento", use_container_width=True):
             try:
-                foto_bytes = st.session_state.get("abastecimento_foto_bytes", None)
-                salvar_abastecimento(veiculo_id, km, litros, valor, foto_bytes, usuario)
-                
-                # Limpa a foto da sessão após salvar com sucesso
-                if "abastecimento_foto_bytes" in st.session_state:
-                    st.session_state["abastecimento_foto_bytes"] = None
+                foto_bytes = st.session_state.get(
+                    "abastecimento_foto_bytes", None
+                )
+                salvar_abastecimento(
+                    veiculo_id, km, litros, valor, foto_bytes, usuario
+                )
+
+                st.session_state["abastecimento_foto_bytes"] = None
 
                 st.success("Abastecimento registado com sucesso!")
                 st.rerun()
@@ -133,7 +166,8 @@ def render():
                     a.litros,
                     a.valor,
                     a.usuario,
-                    a.created_at
+                    a.created_at,
+                    a.foto
                 FROM abastecimentos a
                 LEFT JOIN veiculos v ON a.veiculo_id = v.id
                 ORDER BY a.id DESC
@@ -142,7 +176,25 @@ def render():
             if df.empty:
                 st.info("Nenhum abastecimento registado até o momento.")
             else:
-                st.dataframe(df, use_container_width=True, hide_index=True)
+                for _, row in df.iterrows():
+                    st.markdown(
+                        f"**ID:** {row['id']} | **Veículo:** {row['placa']} - {row['modelo']} | **KM:** {row['km']} | **Litros:** {row['litros']} | **Valor:** R$ {row['valor']} | **Data:** {row['created_at']}"
+                    )
+                    foto_db = row.get("foto")
+                    if foto_db is not None:
+                        try:
+                            if isinstance(foto_db, memoryview):
+                                foto_db = bytes(foto_db)
+                            if isinstance(foto_db, bytes) and len(foto_db) > 0:
+                                img_hist = Image.open(io.BytesIO(foto_db))
+                                st.image(
+                                    img_hist,
+                                    caption=f"🧾 Comprovante (Registo #{row['id']})",
+                                    width=140,
+                                )
+                        except Exception:
+                            pass
+                    st.divider()
         except Exception:
             st.info("A tabela de abastecimentos ainda não possui registos.")
         finally:
