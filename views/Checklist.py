@@ -25,29 +25,27 @@ def obter_localizacao_ip():
 
 
 def obter_endereco_reverso(lat_lon_str):
-    """Converte coordenadas (latitude, longitude) num endereço legível completo via Nominatim."""
+    """Converte coordenadas (latitude, longitude) num endereço legível completo (Rua, Cidade, etc.) via Nominatim."""
     try:
-        if not lat_lon_str or "," not in lat_lon_str or "Erro" in lat_lon_str or "Não" in lat_lon_str:
-            lat_lon_str = obter_localizacao_ip()
-            if not lat_lon_str:
-                return "Localização Padrão (Pátio Central)"
+        if not lat_lon_str or "Erro" in lat_lon_str or "Não" in lat_lon_str:
+            lat_lon_str = obter_localizacao_ip() or "-23.5505, -46.6333"
 
-        partes = lat_lon_str.split(",")
-        if len(partes) != 2:
-            return lat_lon_str
+        # Se vierem coordenadas separadas por vírgula, fazemos a consulta à API de geocodificação reversa
+        if "," in lat_lon_str:
+            partes = lat_lon_str.split(",")
+            if len(partes) == 2:
+                lat = partes[0].strip()
+                lon = partes[1].strip()
 
-        lat = partes[0].strip()
-        lon = partes[1].strip()
+                url = f"https://nominatim.openstreetmap.org/reverse?format=json&lat={lat}&lon={lon}&zoom=18&addressdetails=1"
+                req = urllib.request.Request(
+                    url, headers={"User-Agent": "ControleFrotaApp/1.0"}
+                )
 
-        url = f"https://nominatim.openstreetmap.org/reverse?format=json&lat={lat}&lon={lon}&zoom=18&addressdetails=1"
-        req = urllib.request.Request(
-            url, headers={"User-Agent": "ControleFrotaApp/1.0"}
-        )
-
-        with urllib.request.urlopen(req, timeout=5) as response:
-            data = json.loads(response.read().decode())
-            if "display_name" in data:
-                return data["display_name"]
+                with urllib.request.urlopen(req, timeout=5) as response:
+                    data = json.loads(response.read().decode())
+                    if "display_name" in data:
+                        return data["display_name"]
     except Exception:
         pass
 
@@ -68,6 +66,7 @@ def salvar_checklist(
     if not localizacao or "não" in localizacao.lower() or "," not in localizacao:
         localizacao = obter_localizacao_ip() or "-23.5505, -46.6333"
 
+    # Converte explicitamente as coordenadas em morada detalhada (Rua, etc.)
     localizacao_amigavel = obter_endereco_reverso(localizacao)
     
     fuso_brasilia = datetime.timezone(datetime.timedelta(hours=-3))
@@ -278,7 +277,6 @@ def render():
         )
         motorista_id = st.session_state.get("motorista_id")
 
-        # Utilização do st.form nativo para garantir que a foto, ráios e dados são enviados com sucesso absoluto
         with st.form("form_checklist_oficial"):
             st.subheader("1. Identificação")
             veiculo_sel = st.selectbox("Selecione o Veículo*", list(mapa_v.keys()))
@@ -338,7 +336,6 @@ def render():
 
             st.markdown("<br>", unsafe_allow_html=True)
 
-            # Botão 100% nativo do Streamlit integrado no formulário (sem poluir e com envio garantido)
             submitted = st.form_submit_button("✅ Finalizar e Enviar Checklist", use_container_width=True)
 
             if submitted:
@@ -348,10 +345,9 @@ def render():
                 elif foto_upload is not None:
                     foto_bytes = foto_upload.getvalue()
 
-                # Obtém localização automática via IP seguro garantindo que nunca falha o registo
                 localizacao_capturada = obter_localizacao_ip() or "-23.5505, -46.6333"
 
-                with st.spinner("A guardar o checklist e a processar dados..."):
+                with st.spinner("A guardar o checklist e a processar morada..."):
                     try:
                         salvar_checklist(
                             veiculo_id,
