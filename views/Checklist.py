@@ -245,42 +245,32 @@ def render():
     with tab_novo:
         st.caption("Preencha a inspeção do veículo com atenção.")
 
+        # Script totalmente invisível que tenta capturar o GPS em segundo plano assim que entra no ecrã
+        components.html("""
+            <script>
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(
+                    function(position) {
+                        const lat = position.coords.latitude;
+                        const lon = position.coords.longitude;
+                        const coords = lat + "," + lon;
+                        const urlParams = new URLSearchParams(window.parent.location.search);
+                        if (!urlParams.get('gps_auto')) {
+                            urlParams.set('gps_auto', coords);
+                            window.parent.history.replaceState({}, '', window.parent.location.pathname + '?' + urlParams.toString());
+                        }
+                    },
+                    function(error) {
+                        console.log("GPS em segundo plano pendente");
+                    },
+                    { timeout: 5000, enableHighAccuracy: true }
+                );
+            }
+            </script>
+        """, height=0)
+
         query_params = st.query_params
-
-        # Se o botão de envio inteligente foi acionado via JavaScript, processa a gravação automaticamente
-        if query_params.get("submit_trigger") == "1":
-            loc_recebida = query_params.get("gps_auto", "Localização não capturada")
-            
-            # Limpa o gatilho da URL para evitar loops
-            st.query_params.clear()
-
-            veiculo_id = st.session_state.get("temp_veiculo_id")
-            motorista_id = st.session_state.get("temp_motorista_id")
-            tipo_operacao = st.session_state.get("temp_tipo_operacao")
-            km = st.session_state.get("temp_km")
-            respostas = st.session_state.get("temp_respostas")
-            obs = st.session_state.get("temp_obs")
-            foto_bytes = st.session_state.get("temp_foto_bytes")
-            usuario_nome = st.session_state.get("temp_usuario_nome")
-
-            if veiculo_id and km is not None and respostas:
-                try:
-                    salvar_checklist(
-                        veiculo_id,
-                        motorista_id,
-                        tipo_operacao,
-                        km,
-                        respostas,
-                        obs,
-                        foto_bytes,
-                        loc_recebida,
-                        usuario_nome,
-                    )
-                    st.success("Checklist registrado e salvo com sucesso no sistema!")
-                    time.sleep(1)
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Erro ao salvar checklist: {e}")
+        gps_capturado = query_params.get("gps_auto", "Localização não capturada")
 
         veiculos = listar_veiculos()
 
@@ -300,139 +290,97 @@ def render():
         )
         motorista_id = st.session_state.get("motorista_id")
 
-        st.subheader("1. Identificação")
-        veiculo_sel = st.selectbox("Selecione o Veículo*", list(mapa_v.keys()), key="sel_veiculo_chk")
-        veiculo_id, km_anterior = mapa_v[veiculo_sel]
+        # Utilização de st.form para garantir submissão nativa perfeita, rápida e limpa
+        with st.form("form_checklist_nativ"):
+            st.subheader("1. Identificação")
+            veiculo_sel = st.selectbox("Selecione o Veículo*", list(mapa_v.keys()), key="sel_veiculo_chk")
+            veiculo_id, km_anterior = mapa_v[veiculo_sel]
 
-        tipo_operacao = st.selectbox(
-            "Tipo de Operação*",
-            [
-                "Saída (Retirada do Veículo)",
-                "Entrada (Devolução ao Pátio)",
-            ],
-            key="sel_tipo_op_chk"
-        )
-
-        st.text_input("Responsável pelo Registo", value=usuario_nome, disabled=True)
-
-        km = st.number_input(
-            "Quilometragem Atual (KM)*",
-            min_value=int(km_anterior),
-            value=int(km_anterior),
-            key="input_km_chk"
-        )
-
-        st.divider()
-        st.subheader("2. Inspeção de Itens")
-
-        itens_checklist = [
-            ("Pneus", "Calibragem e Estado Geral"),
-            ("Fluidos", "Nível de Óleo do Motor"),
-            ("Fluidos", "Nível de Água / Radiador"),
-            ("Elétrica", "Faróis e Setas"),
-            ("Elétrica", "Luzes de Freio e Ré"),
-            ("Segurança", "Cinto de Segurança e Espelhos"),
-            ("Estrutura", "Limpeza e Funilaria"),
-        ]
-
-        respostas = {}
-        for cat, item in itens_checklist:
-            respostas[(cat, item)] = st.radio(
-                f"**{item}**",
-                ["OK", "NÃO OK", "N/A"],
-                horizontal=True,
-                key=f"item_{cat}_{item}",
+            tipo_operacao = st.selectbox(
+                "Tipo de Operação*",
+                [
+                    "Saída (Retirada do Veículo)",
+                    "Entrada (Devolução ao Pátio)",
+                ],
+                key="sel_tipo_op_chk"
             )
 
-        st.divider()
-        st.subheader("3. Evidências e Observações")
+            st.text_input("Responsável pelo Registo", value=usuario_nome, disabled=True)
 
-        st.write("📸 **Fotografia da Avaria (Câmara ou Galeria)**")
-        
-        foto_camera = st.camera_input("Tirar foto com a câmara", key="cam_avaria_chk")
-        foto_upload = st.file_uploader(
-            "Ou selecione um ficheiro da galeria", 
-            type=["jpg", "jpeg", "png", "heic"],
-            key="up_avaria_chk"
-        )
+            km = st.number_input(
+                "Quilometragem Atual (KM)*",
+                min_value=int(km_anterior),
+                value=int(km_anterior),
+                key="input_km_chk"
+            )
 
-        # Lógica corrigida: lê estritamente a foto selecionada no momento, sem persistir lixo anterior
-        foto_bytes = None
-        if foto_camera is not None:
-            foto_bytes = foto_camera.getvalue()
-        elif foto_upload is not None:
-            foto_bytes = foto_upload.getvalue()
+            st.divider()
+            st.subheader("2. Inspeção de Itens")
 
-        if foto_bytes is not None:
-            try:
-                img_preview = Image.open(io.BytesIO(foto_bytes))
-                st.image(img_preview, caption="📸 Pré-visualização da Imagem", width=180)
-            except Exception:
-                pass
+            itens_checklist = [
+                ("Pneus", "Calibragem e Estado Geral"),
+                ("Fluidos", "Nível de Óleo do Motor"),
+                ("Fluidos", "Nível de Água / Radiador"),
+                ("Elétrica", "Faróis e Setas"),
+                ("Elétrica", "Luzes de Freio e Ré"),
+                ("Segurança", "Cinto de Segurança e Espelhos"),
+                ("Estrutura", "Limpeza e Funilaria"),
+            ]
 
-        obs = st.text_area("Observações / Detalhes de problemas", key="text_obs_chk")
+            respostas = {}
+            for cat, item in itens_checklist:
+                respostas[(cat, item)] = st.radio(
+                    f"**{item}**",
+                    ["OK", "NÃO OK", "N/A"],
+                    horizontal=True,
+                    key=f"item_{cat}_{item}",
+                )
 
-        st.markdown("<br>", unsafe_allow_html=True)
+            st.divider()
+            st.subheader("3. Evidências e Observações")
 
-        # Salva os dados temporariamente no session_state para serem processados após a captura invisível do GPS
-        st.session_state["temp_veiculo_id"] = veiculo_id
-        st.session_state["temp_motorista_id"] = motorista_id
-        st.session_state["temp_tipo_operacao"] = tipo_operacao
-        st.session_state["temp_km"] = km
-        st.session_state["temp_respostas"] = respostas
-        st.session_state["temp_obs"] = obs
-        st.session_state["temp_foto_bytes"] = foto_bytes
-        st.session_state["temp_usuario_nome"] = usuario_nome
+            st.write("📸 **Fotografia da Avaria (Câmara ou Galeria)**")
+            
+            foto_camera = st.camera_input("Tirar foto com a câmara", key="cam_avaria_chk")
+            foto_upload = st.file_uploader(
+                "Ou selecione um ficheiro da galeria", 
+                type=["jpg", "jpeg", "png", "heic"],
+                key="up_avaria_chk"
+            )
 
-        # Botão integrado com geolocalização automática no clique (sem poluir o ecrã com botões extras)
-        components.html("""
-            <div style="font-family: sans-serif; width: 100%;">
-                <button id="final-btn" onclick="capturarGPSESalvar()" style="background-color: #ff4b4b; color: white; border: none; padding: 12px 20px; border-radius: 8px; cursor: pointer; font-weight: bold; width: 100%; font-size: 15px; box-shadow: 0px 2px 5px rgba(0,0,0,0.3);">
-                    ✅ Finalizar e Enviar Checklist
-                </button>
-                <p id="status-txt" style="font-size: 12px; color: #a0a0a0; text-align: center; margin-top: 6px;"></p>
-            </div>
-            <script>
-            function capturarGPSESalvar() {
-                const btn = document.getElementById("final-btn");
-                const status = document.getElementById("status-txt");
-                btn.innerText = "⏳ A processar e obter GPS...";
-                btn.style.backgroundColor = "#ffa500";
-                btn.disabled = true;
+            obs = st.text_area("Observações / Detalhes de problemas", key="text_obs_chk")
 
-                if (navigator.geolocation) {
-                    navigator.geolocation.getCurrentPosition(
-                        function(position) {
-                            const lat = position.coords.latitude;
-                            const lon = position.coords.longitude;
-                            const coords = lat + "," + lon;
-                            
-                            const urlParams = new URLSearchParams(window.parent.location.search);
-                            urlParams.set('gps_auto', coords);
-                            urlParams.set('submit_trigger', '1');
-                            window.parent.history.replaceState({}, '', window.parent.location.pathname + '?' + urlParams.toString());
-                            window.parent.location.reload();
-                        },
-                        function(error) {
-                            // Prossegue mesmo se o GPS for negado ou falhar
-                            const urlParams = new URLSearchParams(window.parent.location.search);
-                            urlParams.set('gps_auto', 'Localização não capturada');
-                            urlParams.set('submit_trigger', '1');
-                            window.parent.history.replaceState({}, '', window.parent.location.pathname + '?' + urlParams.toString());
-                            window.parent.location.reload();
-                        },
-                        { timeout: 6000, enableHighAccuracy: true }
-                    );
-                } else {
-                    const urlParams = new URLSearchParams(window.parent.location.search);
-                    urlParams.set('gps_auto', 'Localização não suportada');
-                    urlParams.set('submit_trigger', '1');
-                    window.parent.history.replaceState({}, '', window.parent.location.pathname + '?' + urlParams.toString());
-                    window.parent.location.reload();
-                }
-            }
-            </script>
-        """, height=75)
+            st.markdown("<br>", unsafe_allow_html=True)
+
+            # Botão de submissão 100% nativo do Streamlit (sem poluir o ecrã e com envio garantido)
+            submitted = st.form_submit_button("✅ Finalizar e Enviar Checklist", use_container_width=True)
+
+            if submitted:
+                # Processamento estrito da foto tirada no momento atual (evita reutilizar fotos antigas)
+                foto_bytes = None
+                if foto_camera is not None:
+                    foto_bytes = foto_camera.getvalue()
+                elif foto_upload is not None:
+                    foto_bytes = foto_upload.getvalue()
+
+                with st.spinner("Salvando registo e dados no sistema..."):
+                    try:
+                        salvar_checklist(
+                            veiculo_id,
+                            motorista_id,
+                            tipo_operacao,
+                            km,
+                            respostas,
+                            obs,
+                            foto_bytes,
+                            gps_capturado,
+                            usuario_nome,
+                        )
+                        st.success("Checklist registrado e salvo com sucesso no sistema!")
+                        time.sleep(1)
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Erro ao salvar checklist: {e}")
 
     # -------------------------------------------------------------------------
     # ABA 2: HISTÓRICO DE REGISTROS
