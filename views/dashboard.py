@@ -152,7 +152,6 @@ def render_dashboard(contar_registros_fn=None):
         else pd.DataFrame()
     )
 
-    # Carregar dados de ocorrências verificando dinamicamente a foto em ocorrencias e checklists
     df_ocorrencias = pd.DataFrame()
     if "ocorrencias" in tabelas_existentes:
         df_oc_cols = ler_tabela_direta("SELECT * FROM ocorrencias LIMIT 0")
@@ -206,7 +205,6 @@ def render_dashboard(contar_registros_fn=None):
                 df_ocorrencias = ler_tabela_direta(f"SELECT * FROM {t_oc}")
                 break
 
-    # Carregar dados de abastecimentos
     df_abastecimentos = pd.DataFrame()
     for t_abast in ["abastecimentos", "abastecimento", "combustivel"]:
         if t_abast in tabelas_existentes:
@@ -232,7 +230,6 @@ def render_dashboard(contar_registros_fn=None):
                 df_checklists = df_temp
                 break
 
-    # Cruzamento de checklists e cálculo de consumo por veículo
     if not df_veiculos.empty:
         status_list = []
         resp_list = []
@@ -334,8 +331,8 @@ def render_dashboard(contar_registros_fn=None):
             if not df_chk_veiculo.empty:
                 col_data = None
                 for c in [
-                    "data_hora",
                     "created_at",
+                    "data_hora",
                     "data",
                     "data_checklist",
                     "timestamp",
@@ -354,19 +351,27 @@ def render_dashboard(contar_registros_fn=None):
 
                 ult_chk = df_chk_veiculo.iloc[0]
                 raw_data = ult_chk.get(col_data) if col_data else None
+                
                 if isinstance(raw_data, datetime.datetime):
-                    data_formatada = raw_data.strftime("%d/%m/%Y %H:%M")
+                    # Ajusta o desfasamento UTC (-3h) para coincidir exatamente com a hora do checklist
+                    raw_data_ajustado = raw_data - datetime.timedelta(hours=3)
+                    data_formatada = raw_data_ajustado.strftime("%d/%m/%Y %H:%M")
                 elif raw_data and str(raw_data).strip() not in [
                     "",
                     "None",
                     "NaT",
                 ]:
                     data_str = str(raw_data).strip()
-                    data_formatada = (
-                        data_str[:16].replace("T", " ")
-                        if len(data_str) >= 16
-                        else data_str
-                    )
+                    try:
+                        dt_parsed = pd.to_datetime(data_str)
+                        dt_ajustado = dt_parsed - pd.Timedelta(hours=3)
+                        data_formatada = dt_ajustado.strftime("%d/%m/%Y %H:%M")
+                    except Exception:
+                        data_formatada = (
+                            data_str[:16].replace("T", " ")
+                            if len(data_str) >= 16
+                            else data_str
+                        )
                 else:
                     data_formatada = "N/A"
 
@@ -562,7 +567,6 @@ def render_dashboard(contar_registros_fn=None):
 
     st.divider()
 
-    # Criação das abas
     (
         tab_contratos,
         tab_consumo,
@@ -810,7 +814,6 @@ def render_dashboard(contar_registros_fn=None):
                     unsafe_allow_html=True,
                 )
 
-                # Exibir comprovantes de abastecimento de forma limpa, pequena e expansível
                 if not df_abast_v.empty and col_comprovante_abast:
                     for _, ab_row in df_abast_v.iterrows():
                         comprovante_img = ab_row.get(col_comprovante_abast)
@@ -1050,7 +1053,6 @@ def render_dashboard(contar_registros_fn=None):
                     unsafe_allow_html=True,
                 )
 
-                # Exibição segura e limpa da foto da ocorrência (com suporte a memoryview)
                 if foto_oc is not None:
                     try:
                         if isinstance(foto_oc, memoryview):
