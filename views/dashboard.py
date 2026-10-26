@@ -122,7 +122,6 @@ def ler_tabela_direta(query):
 
 
 def deletar_registro(tabela, id_registro):
-    """Executa a exclusão segura de um registro por ID."""
     conn = get_connection()
     try:
         cursor = conn.cursor()
@@ -137,9 +136,7 @@ def deletar_registro(tabela, id_registro):
 
 
 def gerar_excel_bytes(df, nome_aba="Dados"):
-    """Gera o arquivo binário em Excel (.xlsx) para download sem colunas binárias."""
     output = io.BytesIO()
-    # Remove colunas de fotos/blobs para não corromper o Excel
     df_export = df.copy()
     for col in df_export.columns:
         if any(k in col.lower() for k in ["foto", "imagem", "comprovante", "anexo", "bytes", "blob"]):
@@ -153,7 +150,11 @@ def gerar_excel_bytes(df, nome_aba="Dados"):
 def render_dashboard(contar_registros_fn=None):
     st.title("📊 Painel Geral da Frota")
 
-    # Leitura direta e segura das tabelas (compatível com SQLite e PostgreSQL)
+    # Inicializa o estado para controlar qual detalhe está aberto ao clicar nos botões de métricas
+    if "detalhe_ativo" not in st.session_state:
+        st.session_state["detalhe_ativo"] = None
+
+    # Leitura direta e segura das tabelas
     df_veiculos = pd.DataFrame()
     for t in ["veiculos", "veículo"]:
         df_temp = ler_tabela_direta(f"SELECT * FROM {t}")
@@ -189,7 +190,6 @@ def render_dashboard(contar_registros_fn=None):
             df_ocorrencias = df_temp
             break
 
-    # Tratamento para garantir junções seguras nas ocorrências caso existam
     if not df_ocorrencias.empty:
         cols_oc = df_ocorrencias.columns.tolist()
         foto_oc_col = next(
@@ -333,7 +333,7 @@ def render_dashboard(contar_registros_fn=None):
                         except Exception:
                             pass
 
-                    if consumo_str == "Não calculated":
+                    if consumo_str == "Não calculado":
                         for c_med in [
                             "consumo_medio",
                             "media_km_l",
@@ -464,7 +464,7 @@ def render_dashboard(contar_registros_fn=None):
         df_veiculos["ultimo_tipo_movimento"] = ""
         df_veiculos["ultimo_data_hora"] = "N/A"
         df_veiculos["ultimo_endereco"] = "Não informado"
-        df_veiculos["consumo_medio"] = "Não calculated"
+        df_veiculos["consumo_medio"] = "Não calculado"
 
     custo_total_manut = 0.0
     if not df_manutencoes.empty:
@@ -579,17 +579,97 @@ def render_dashboard(contar_registros_fn=None):
     total_motoristas = len(df_motoristas) if not df_motoristas.empty else 0
     total_manut = len(df_manutencoes)
 
+    # -------------------------------------------------------------------------
+    # BOTÕES DE MÉTRICAS CLICÁVEIS NO DASHBOARD
+    # -------------------------------------------------------------------------
+    st.markdown("##### 📌 Clique em um indicador para ver mais detalhes:")
+    
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("🚚 Frota Total", total_veiculos)
-    c2.metric("🏢 Próprios", total_proprios)
-    c3.metric("📋 Alugados", total_alugados)
-    c4.metric("🛠 Em Manutenção", total_manut)
+    if c1.button(f"🚚 Frota Total\n\n **{total_veiculos}**", use_container_width=True):
+        st.session_state["detalhe_ativo"] = "frota_total"
+    if c2.button(f"🏢 Próprios\n\n **{total_proprios}**", use_container_width=True):
+        st.session_state["detalhe_ativo"] = "proprios"
+    if c3.button(f"📋 Alugados\n\n **{total_alugados}**", use_container_width=True):
+        st.session_state["detalhe_ativo"] = "alugados"
+    if c4.button(f"🛠 Em Manutenção\n\n **{total_manut}**", use_container_width=True):
+        st.session_state["detalhe_ativo"] = "manutencao"
 
     c5, c6, c7, c8 = st.columns(4)
-    c5.metric("💰 Custo Manutenções", f"R$ {custo_total_manut:,.2f}")
-    c6.metric("👨 Motoristas", total_motoristas)
-    c7.metric("⚠ Ocorrências", total_ocorrencias)
-    c8.metric("📄 Venc. Contratos", total_venc_contratos)
+    if c5.button(f"💰 Custo Manutenções\n\n **R$ {custo_total_manut:,.2f}**", use_container_width=True):
+        st.session_state["detalhe_ativo"] = "custo_manut"
+    if c6.button(f"👨 Motoristas\n\n **{total_motoristas}**", use_container_width=True):
+        st.session_state["detalhe_ativo"] = "motoristas"
+    if c7.button(f"⚠ Ocorrências\n\n **{total_ocorrencias}**", use_container_width=True):
+        st.session_state["detalhe_ativo"] = "ocorrencias"
+    if c8.button(f"📄 Venc. Contratos\n\n **{total_venc_contratos}**", use_container_width=True):
+        st.session_state["detalhe_ativo"] = "contratos"
+
+    # Se houver um detalhe ativo selecionado via clique, exibe a informação detalhada logo abaixo
+    if st.session_state["detalhe_ativo"]:
+        st.divider()
+        col_tit, col_fechar = st.columns([5, 1])
+        
+        with col_fechar:
+            if st.button("❌ Fechar", use_container_width=True):
+                st.session_state["detalhe_ativo"] = None
+                st.rerun()
+
+        detalhe = st.session_state["detalhe_ativo"]
+        
+        if detalhe == "frota_total":
+            st.subheader("📋 Detalhes: Frota Total de Veículos")
+            if not df_veiculos.empty:
+                st.dataframe(df_veiculos, use_container_width=True, hide_index=True)
+            else:
+                st.info("Nenhum veículo registado.")
+
+        elif detalhe == "proprios":
+            st.subheader("🏢 Detalhes: Veículos Próprios")
+            if not df_proprios.empty:
+                st.dataframe(df_proprios, use_container_width=True, hide_index=True)
+            else:
+                st.info("Nenhum veículo próprio registado.")
+
+        elif detalhe == "alugados":
+            st.subheader("📋 Detalhes: Veículos Alugados / Terceirizados")
+            if not df_alugados.empty:
+                st.dataframe(df_alugados, use_container_width=True, hide_index=True)
+            else:
+                st.info("Nenhum veículo alugado registado.")
+
+        elif detalhe == "manutencao":
+            st.subheader("🛠 Detalhes: Veículos / Histórico em Manutenção")
+            if not df_manutencoes.empty:
+                st.dataframe(df_manutencoes, use_container_width=True, hide_index=True)
+            else:
+                st.info("Nenhuma manutenção registada.")
+
+        elif detalhe == "custo_manut":
+            st.subheader("💰 Detalhes: Custos de Manutenção")
+            st.write(f"O custo total acumulado em manutenções é de **R$ {custo_total_manut:,.2f}**.")
+            if not df_manutencoes.empty:
+                st.dataframe(df_manutencoes, use_container_width=True, hide_index=True)
+
+        elif detalhe == "motoristas":
+            st.subheader("👨 Detalhes: Motoristas Registados")
+            if not df_motoristas.empty:
+                st.dataframe(df_motoristas, use_container_width=True, hide_index=True)
+            else:
+                st.info("Nenhum motorista registado.")
+
+        elif detalhe == "ocorrencias":
+            st.subheader("⚠ Detalhes: Ocorrências e Incidentes")
+            if not df_ocorrencias.empty:
+                st.dataframe(df_ocorrencias, use_container_width=True, hide_index=True)
+            else:
+                st.success("Nenhuma ocorrência registada.")
+
+        elif detalhe == "contratos":
+            st.subheader("📄 Detalhes: Vencimentos de Contratos (Próximos 30 dias)")
+            if not df_contratos.empty:
+                st.dataframe(df_contratos, use_container_width=True, hide_index=True)
+            else:
+                st.info("Nenhum contrato próximo do vencimento encontrado.")
 
     st.divider()
 
@@ -1164,7 +1244,7 @@ def render_dashboard(contar_registros_fn=None):
             )
 
     # -------------------------------------------------------------------------
-    # ABA 6: GESTÃO DE DADOS & BACKUPS (NOVA)
+    # ABA: GESTÃO DE DADOS & BACKUPS
     # -------------------------------------------------------------------------
     with tab_gestao_dados:
         st.markdown("##### 📥 Exportar Backups & Limpeza de Registos")
@@ -1223,89 +1303,3 @@ def render_dashboard(contar_registros_fn=None):
                 if not df_manutencoes.empty:
                     excel_m = gerar_excel_bytes(df_manutencoes, "Manutencoes")
                     st.download_button(
-                        "🛠 Baixar Manutenções (.xlsx)",
-                        data=excel_m,
-                        file_name="backup_manutencoes_frota.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        use_container_width=True,
-                    )
-            with e_col5:
-                if not df_ocorrencias.empty:
-                    excel_o = gerar_excel_bytes(df_ocorrencias, "Ocorrencias")
-                    st.download_button(
-                        "⚠️ Baixar Ocorrências (.xlsx)",
-                        data=excel_o,
-                        file_name="backup_ocorrencias_frota.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        use_container_width=True,
-                    )
-
-        with sub_del:
-            st.warning("⚠️ Cuidado: A exclusão de registos é permanente na base de dados.")
-
-            tipo_gestao = st.selectbox(
-                "Selecione a Tabela para Apagar o Registo:",
-                ["Abastecimentos", "Checklists", "Ocorrências"],
-            )
-
-            if tipo_gestao == "Abastecimentos":
-                if df_abastecimentos.empty:
-                    st.info("Nenhum abastecimento encontrado.")
-                else:
-                    mapa_ab = {}
-                    for _, r in df_abastecimentos.iterrows():
-                        reg_id = r.get("id")
-                        dt_r = r.get(col_data_abast, "N/A") if col_data_abast else "N/A"
-                        lit_r = r.get(col_litros_abast, 0) if col_litros_abast else 0
-                        val_r = r.get(col_valor_abast, 0) if col_valor_abast else 0
-                        mapa_ab[f"ID {reg_id} | Data: {dt_r} | {lit_r}L | R$ {val_r}"] = reg_id
-
-                    sel_item = st.selectbox("Escolha o Abastecimento:", list(mapa_ab.keys()))
-                    if st.button("🗑 Confirmar Exclusão do Abastecimento", type="primary"):
-                        id_del = mapa_ab[sel_item]
-                        if deletar_registro("abastecimentos", id_del):
-                            st.success("Abastecimento excluído com sucesso!")
-                            st.rerun()
-                        else:
-                            st.error("Erro ao apagar registo.")
-
-            elif tipo_gestao == "Checklists":
-                if df_checklists.empty:
-                    st.info("Nenhum checklist encontrado.")
-                else:
-                    mapa_chk = {}
-                    for _, r in df_checklists.iterrows():
-                        reg_id = r.get("id")
-                        dt_r = r.get("created_at", r.get("data", "N/A"))
-                        km_r = r.get("km", "N/A")
-                        res_r = r.get("resultado", "N/A")
-                        mapa_chk[f"ID {reg_id} | Data: {dt_r} | KM: {km_r} | {res_r}"] = reg_id
-
-                    sel_item = st.selectbox("Escolha o Checklist:", list(mapa_chk.keys()))
-                    if st.button("🗑 Confirmar Exclusão do Checklist", type="primary"):
-                        id_del = mapa_chk[sel_item]
-                        if deletar_registro("checklists", id_del):
-                            st.success("Checklist excluído com sucesso!")
-                            st.rerun()
-                        else:
-                            st.error("Erro ao apagar registo.")
-
-            elif tipo_gestao == "Ocorrências":
-                if df_ocorrencias.empty:
-                    st.info("Nenhuma ocorrência encontrada.")
-                else:
-                    mapa_oc = {}
-                    for _, r in df_ocorrencias.iterrows():
-                        reg_id = r.get("id")
-                        desc_r = r.get("descricao", r.get("titulo", "Ocorrência"))
-                        st_r = r.get("status", "Pendente")
-                        mapa_oc[f"ID {reg_id} | {desc_r[:30]}... | Status: {st_r}"] = reg_id
-
-                    sel_item = st.selectbox("Escolha a Ocorrência:", list(mapa_oc.keys()))
-                    if st.button("🗑 Confirmar Exclusão da Ocorrência", type="primary"):
-                        id_del = mapa_oc[sel_item]
-                        if deletar_registro("ocorrencias", id_del):
-                            st.success("Ocorrência excluída com sucesso!")
-                            st.rerun()
-                        else:
-                            st.error("Erro ao apagar registo.")
