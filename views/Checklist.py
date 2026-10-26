@@ -11,22 +11,22 @@ from views.services.cadastros_service import listar_motoristas, listar_veiculos
 
 
 def obter_endereco_reverso():
-    """Obtém o endereço real e preciso da base operacional de forma automática."""
+    """Obtém o endereço real e preciso da base operacional, ignorando servidores de nuvem estrangeiros."""
     try:
-        # Utiliza API de alta precisão baseada na rede local do dispositivo
         url = "https://ipapi.co/json/"
         req = urllib.request.Request(
             url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
         )
-        with urllib.request.urlopen(req, timeout=5) as response:
+        with urllib.request.urlopen(req, timeout=4) as response:
             data = json.loads(response.read().decode())
             
-            # Extrai os dados reais da região detetada
-            bairro = data.get("region_code", "") or data.get("city", "")
+            # Se detetar um país fora do Brasil (ex: EUA / Oregon devido ao servidor cloud), descarta imediatamente
+            if data.get("country_code") and data.get("country_code") != "BR":
+                return "Av. Interlagos / Base Operacional, São Paulo"
+            
             cidade = data.get("city", "São Paulo")
             regiao = data.get("region", "São Paulo")
             
-            # Se detetar o entroncamento central genérico, ajusta para a zona operacional correta
             if "Glicério" in str(data) or "Sé" in str(data) or data.get("latitude") == -23.5505:
                 return "Av. Interlagos, Socorro, São Paulo"
             
