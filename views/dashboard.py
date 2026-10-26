@@ -76,9 +76,7 @@ def render_cards_veiculos_estilizados(df_veiculos):
         endereco_chk = row.get("ultimo_endereco", "Não informado")
 
         if status_disp == "Disponível":
-            badge_html = (
-                '<span class="badge-disponivel">🟢 Disponível </span>'
-            )
+            badge_html = '<span class="badge-disponivel">🟢 Disponível </span>'
         else:
             badge_html = '<span class="badge-indisponivel">🔴 Em Uso / Indisponível</span>'
 
@@ -150,7 +148,6 @@ def gerar_excel_bytes(df, nome_aba="Dados"):
 def render_dashboard(contar_registros_fn=None):
     st.title("📊 Painel Geral da Frota")
 
-    # Inicializa o estado para controlar qual detalhe está aberto ao clicar nos botões de métricas
     if "detalhe_ativo" not in st.session_state:
         st.session_state["detalhe_ativo"] = None
 
@@ -193,11 +190,7 @@ def render_dashboard(contar_registros_fn=None):
     if not df_ocorrencias.empty:
         cols_oc = df_ocorrencias.columns.tolist()
         foto_oc_col = next(
-            (
-                c
-                for c in ["foto", "imagem", "comprovante", "anexo"]
-                if c in cols_oc
-            ),
+            (c for c in ["foto", "imagem", "comprovante", "anexo"] if c in cols_oc),
             None,
         )
         has_chk_id = "checklist_id" in cols_oc
@@ -245,9 +238,7 @@ def render_dashboard(contar_registros_fn=None):
         conn = get_connection()
         try:
             cursor = conn.cursor()
-            cursor.execute(
-                "SELECT name FROM sqlite_master WHERE type='table';"
-            )
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
             tables = [row[0] for row in cursor.fetchall()]
             cursor.close()
             conn.close()
@@ -289,41 +280,19 @@ def render_dashboard(contar_registros_fn=None):
                 df_v_abast = df_abastecimentos[mask_abast]
                 if not df_v_abast.empty:
                     col_km = next(
-                        (
-                            c
-                            for c in [
-                                "km",
-                                "quilometragem",
-                                "odometro",
-                                "km_atual",
-                            ]
-                            if c in df_v_abast.columns
-                        ),
+                        (c for c in ["km", "quilometragem", "odometro", "km_atual"] if c in df_v_abast.columns),
                         None,
                     )
                     col_litros = next(
-                        (
-                            c
-                            for c in [
-                                "litros",
-                                "quantidade",
-                                "qtd_litros",
-                                "volume",
-                            ]
-                            if c in df_v_abast.columns
-                        ),
+                        (c for c in ["litros", "quantidade", "qtd_litros", "volume"] if c in df_v_abast.columns),
                         None,
                     )
 
                     if col_km and col_litros:
                         try:
                             df_v_abast = df_v_abast.sort_values(by=col_km)
-                            km_vals = pd.to_numeric(
-                                df_v_abast[col_km], errors="coerce"
-                            ).dropna()
-                            litros_vals = pd.to_numeric(
-                                df_v_abast[col_litros], errors="coerce"
-                            ).dropna()
+                            km_vals = pd.to_numeric(df_v_abast[col_km], errors="coerce").dropna()
+                            litros_vals = pd.to_numeric(df_v_abast[col_litros], errors="coerce").dropna()
                             if len(km_vals) >= 2 and litros_vals.sum() > 0:
                                 diff_km = km_vals.iloc[-1] - km_vals.iloc[0]
                                 total_l = litros_vals.sum()
@@ -334,48 +303,30 @@ def render_dashboard(contar_registros_fn=None):
                             pass
 
                     if consumo_str == "Não calculado":
-                        for c_med in [
-                            "consumo_medio",
-                            "media_km_l",
-                            "consumo",
-                        ]:
+                        for c_med in ["consumo_medio", "media_km_l", "consumo"]:
                             if c_med in df_v_abast.columns:
                                 val_m = df_v_abast[c_med].dropna()
                                 if not val_m.empty:
-                                    consumo_str = (
-                                        f"{float(val_m.iloc[-1]):.2f} km/L"
-                                    )
+                                    consumo_str = f"{float(val_m.iloc[-1]):.2f} km/L"
                                     break
 
             consumo_list.append(consumo_str)
 
             df_chk_veiculo = pd.DataFrame()
-            if (
-                not df_checklists.empty
-                and "veiculo_id" in df_checklists.columns
-                and v_id is not None
-            ):
+            if not df_checklists.empty and "veiculo_id" in df_checklists.columns and v_id is not None:
                 mask = df_checklists["veiculo_id"] == v_id
                 df_chk_veiculo = df_checklists[mask]
 
             if not df_chk_veiculo.empty:
                 col_data = None
-                for c in [
-                    "created_at",
-                    "data_hora",
-                    "data",
-                    "data_checklist",
-                    "timestamp",
-                ]:
+                for c in ["created_at", "data_hora", "data", "data_checklist", "timestamp"]:
                     if c in df_chk_veiculo.columns:
                         col_data = c
                         break
 
                 if col_data:
                     try:
-                        df_chk_veiculo = df_chk_veiculo.sort_values(
-                            by=col_data, ascending=False
-                        )
+                        df_chk_veiculo = df_chk_veiculo.sort_values(by=col_data, ascending=False)
                     except Exception:
                         pass
 
@@ -384,21 +335,13 @@ def render_dashboard(contar_registros_fn=None):
 
                 if isinstance(raw_data, datetime.datetime):
                     data_formatada = raw_data.strftime("%d/%m/%Y %H:%M")
-                elif raw_data and str(raw_data).strip() not in [
-                    "",
-                    "None",
-                    "NaT",
-                ]:
+                elif raw_data and str(raw_data).strip() not in ["", "None", "NaT"]:
                     data_str = str(raw_data).strip()
                     try:
                         dt_parsed = pd.to_datetime(data_str)
                         data_formatada = dt_parsed.strftime("%d/%m/%Y %H:%M")
                     except Exception:
-                        data_formatada = (
-                            data_str[:16].replace("T", " ")
-                            if len(data_str) >= 16
-                            else data_str
-                        )
+                        data_formatada = data_str[:16].replace("T", " ") if len(data_str) >= 16 else data_str
                 else:
                     data_formatada = "N/A"
 
@@ -409,40 +352,26 @@ def render_dashboard(contar_registros_fn=None):
                         break
 
                 resp = "Administrador / Sistema"
-                for col_resp in [
-                    "responsavel",
-                    "usuario_responsavel",
-                    "nome_responsavel",
-                ]:
+                for col_resp in ["responsavel", "usuario_responsavel", "nome_responsavel"]:
                     if col_resp in ult_chk and pd.notna(ult_chk[col_resp]):
                         resp = str(ult_chk[col_resp])
                         break
 
                 tipo_mov = ""
-                for col_tipo in [
-                    "tipo_operacao",
-                    "tipo_movimento",
-                    "operacao",
-                    "movimento",
-                    "fluxo",
-                ]:
+                for col_tipo in ["tipo_operacao", "tipo_movimento", "operacao", "movimento", "fluxo"]:
                     if col_tipo in ult_chk and pd.notna(ult_chk[col_tipo]):
                         tipo_mov = str(ult_chk[col_tipo])
                         break
 
                 tipo_mov_lower = tipo_mov.lower()
-                if any(
-                    k in tipo_mov_lower for k in ["saida", "retirada", "uso"]
-                ):
+                if any(k in tipo_mov_lower for k in ["saida", "retirada", "uso"]):
                     status_disp = "Indisponível"
                 else:
                     status_disp = "Disponível"
 
                 status_list.append(status_disp)
                 resp_list.append(resp)
-                tipo_mov_list.append(
-                    tipo_mov if tipo_mov else "Registo Geral"
-                )
+                tipo_mov_list.append(tipo_mov if tipo_mov else "Registo Geral")
                 data_hora_list.append(data_formatada)
                 endereco_list.append(endereco_chk)
             else:
@@ -486,12 +415,7 @@ def render_dashboard(contar_registros_fn=None):
 
     total_venc_contratos = 0
     df_contratos = pd.DataFrame()
-    for t_c in [
-        "contratos",
-        "locacoes",
-        "gestao_contratos",
-        "veiculos_contratos",
-    ]:
+    for t_c in ["contratos", "locacoes", "gestao_contratos", "veiculos_contratos"]:
         df_temp = ler_tabela_direta(f"SELECT * FROM {t_c}")
         if not df_temp.empty:
             df_contratos = df_temp
@@ -499,23 +423,14 @@ def render_dashboard(contar_registros_fn=None):
 
     if not df_contratos.empty:
         col_venc = None
-        for c in [
-            "data_fim",
-            "vencimento",
-            "termino_contrato",
-            "data_termino",
-            "vencimento_contrato",
-            "data_vencimento",
-        ]:
+        for c in ["data_fim", "vencimento", "termino_contrato", "data_termino", "vencimento_contrato", "data_vencimento"]:
             if c in df_contratos.columns:
                 col_venc = c
                 break
         if col_venc:
             try:
                 hoje = pd.Timestamp.now().normalize()
-                datas_venc = pd.to_datetime(
-                    df_contratos[col_venc], errors="coerce"
-                )
+                datas_venc = pd.to_datetime(df_contratos[col_venc], errors="coerce")
                 limite = hoje + pd.Timedelta(days=30)
                 total_venc_contratos = int(
                     ((datas_venc >= hoje) & (datas_venc <= limite)).sum()
@@ -526,22 +441,14 @@ def render_dashboard(contar_registros_fn=None):
 
     if total_venc_contratos == 0 and not df_veiculos.empty:
         col_venc_v = None
-        for c in [
-            "vencimento_contrato",
-            "data_fim_contrato",
-            "fim_contrato",
-            "vencimento",
-            "data_vencimento",
-        ]:
+        for c in ["vencimento_contrato", "data_fim_contrato", "fim_contrato", "vencimento", "data_vencimento"]:
             if c in df_veiculos.columns:
                 col_venc_v = c
                 break
         if col_venc_v:
             try:
                 hoje = pd.Timestamp.now().normalize()
-                datas_venc = pd.to_datetime(
-                    df_veiculos[col_venc_v], errors="coerce"
-                )
+                datas_venc = pd.to_datetime(df_veiculos[col_venc_v], errors="coerce")
                 limite = hoje + pd.Timedelta(days=30)
                 total_venc_contratos = int(
                     ((datas_venc >= hoje) & (datas_venc <= limite)).sum()
@@ -579,9 +486,7 @@ def render_dashboard(contar_registros_fn=None):
     total_motoristas = len(df_motoristas) if not df_motoristas.empty else 0
     total_manut = len(df_manutencoes)
 
-    # -------------------------------------------------------------------------
-    # BOTÕES DE MÉTRICAS CLICÁVEIS NO DASHBOARD
-    # -------------------------------------------------------------------------
+    # --- BOTÕES DE MÉTRICAS CLICÁVEIS ---
     st.markdown("##### 📌 Clique em um indicador para ver mais detalhes:")
     
     c1, c2, c3, c4 = st.columns(4)
@@ -604,11 +509,9 @@ def render_dashboard(contar_registros_fn=None):
     if c8.button(f"📄 Venc. Contratos\n\n **{total_venc_contratos}**", use_container_width=True):
         st.session_state["detalhe_ativo"] = "contratos"
 
-    # Se houver um detalhe ativo selecionado via clique, exibe a informação detalhada logo abaixo
     if st.session_state["detalhe_ativo"]:
         st.divider()
         col_tit, col_fechar = st.columns([5, 1])
-        
         with col_fechar:
             if st.button("❌ Fechar", use_container_width=True):
                 st.session_state["detalhe_ativo"] = None
@@ -622,48 +525,41 @@ def render_dashboard(contar_registros_fn=None):
                 st.dataframe(df_veiculos, use_container_width=True, hide_index=True)
             else:
                 st.info("Nenhum veículo registado.")
-
         elif detalhe == "proprios":
             st.subheader("🏢 Detalhes: Veículos Próprios")
             if not df_proprios.empty:
                 st.dataframe(df_proprios, use_container_width=True, hide_index=True)
             else:
                 st.info("Nenhum veículo próprio registado.")
-
         elif detalhe == "alugados":
             st.subheader("📋 Detalhes: Veículos Alugados / Terceirizados")
             if not df_alugados.empty:
                 st.dataframe(df_alugados, use_container_width=True, hide_index=True)
             else:
                 st.info("Nenhum veículo alugado registado.")
-
         elif detalhe == "manutencao":
             st.subheader("🛠 Detalhes: Veículos / Histórico em Manutenção")
             if not df_manutencoes.empty:
                 st.dataframe(df_manutencoes, use_container_width=True, hide_index=True)
             else:
                 st.info("Nenhuma manutenção registada.")
-
         elif detalhe == "custo_manut":
             st.subheader("💰 Detalhes: Custos de Manutenção")
             st.write(f"O custo total acumulado em manutenções é de **R$ {custo_total_manut:,.2f}**.")
             if not df_manutencoes.empty:
                 st.dataframe(df_manutencoes, use_container_width=True, hide_index=True)
-
         elif detalhe == "motoristas":
             st.subheader("👨 Detalhes: Motoristas Registados")
             if not df_motoristas.empty:
                 st.dataframe(df_motoristas, use_container_width=True, hide_index=True)
             else:
                 st.info("Nenhum motorista registado.")
-
         elif detalhe == "ocorrencias":
             st.subheader("⚠ Detalhes: Ocorrências e Incidentes")
             if not df_ocorrencias.empty:
                 st.dataframe(df_ocorrencias, use_container_width=True, hide_index=True)
             else:
                 st.success("Nenhuma ocorrência registada.")
-
         elif detalhe == "contratos":
             st.subheader("📄 Detalhes: Vencimentos de Contratos (Próximos 30 dias)")
             if not df_contratos.empty:
@@ -690,9 +586,7 @@ def render_dashboard(contar_registros_fn=None):
     ])
 
     with tab_contratos:
-        sub_alug, sub_prop = st.tabs(
-            ["📋 Alugados / Terceirizados", "🏢 Próprios"]
-        )
+        sub_alug, sub_prop = st.tabs(["📋 Alugados / Terceirizados", "🏢 Próprios"])
         with sub_alug:
             render_cards_veiculos_estilizados(df_alugados)
         with sub_prop:
@@ -713,56 +607,19 @@ def render_dashboard(contar_registros_fn=None):
 
         if not df_abastecimentos.empty:
             col_data_abast = next(
-                (
-                    c
-                    for c in [
-                        "data",
-                        "data_abastecimento",
-                        "created_at",
-                        "data_hora",
-                    ]
-                    if c in df_abastecimentos.columns
-                ),
+                (c for c in ["data", "data_abastecimento", "created_at", "data_hora"] if c in df_abastecimentos.columns),
                 None,
             )
             col_valor_abast = next(
-                (
-                    c
-                    for c in [
-                        "valor",
-                        "valor_total",
-                        "custo",
-                        "preco_total",
-                    ]
-                    if c in df_abastecimentos.columns
-                ),
+                (c for c in ["valor", "valor_total", "custo", "preco_total"] if c in df_abastecimentos.columns),
                 None,
             )
             col_litros_abast = next(
-                (
-                    c
-                    for c in [
-                        "litros",
-                        "quantidade",
-                        "qtd_litros",
-                        "volume",
-                    ]
-                    if c in df_abastecimentos.columns
-                ),
+                (c for c in ["litros", "quantidade", "qtd_litros", "volume"] if c in df_abastecimentos.columns),
                 None,
             )
             col_comprovante_abast = next(
-                (
-                    c
-                    for c in [
-                        "comprovante",
-                        "foto",
-                        "recibo",
-                        "imagem",
-                        "arquivo",
-                    ]
-                    if c in df_abastecimentos.columns
-                ),
+                (c for c in ["comprovante", "foto", "recibo", "imagem", "arquivo"] if c in df_abastecimentos.columns),
                 None,
             )
 
@@ -807,9 +664,7 @@ def render_dashboard(contar_registros_fn=None):
         m4.metric("💰 Gasto no Mês", f"R$ {custo_mes:,.2f}")
 
         st.divider()
-        st.markdown(
-            "##### 🚗 Histórico de Abastecimentos e Comprovantes por Veículo"
-        )
+        st.markdown("##### 🚗 Histórico de Abastecimentos e Comprovantes por Veículo")
 
         if df_veiculos.empty:
             st.info("Nenhum veículo registado.")
@@ -866,16 +721,10 @@ def render_dashboard(contar_registros_fn=None):
                     df_abast_v = df_abastecimentos[mask_v].copy()
 
                     if not df_abast_v.empty:
-                        sort_col = (
-                            "id"
-                            if "id" in df_abast_v.columns
-                            else col_data_abast
-                        )
+                        sort_col = "id" if "id" in df_abast_v.columns else col_data_abast
                         if sort_col:
                             try:
-                                df_abast_v = df_abast_v.sort_values(
-                                    by=sort_col, ascending=False
-                                )
+                                df_abast_v = df_abast_v.sort_values(by=sort_col, ascending=False)
                             except Exception:
                                 pass
 
@@ -891,56 +740,23 @@ def render_dashboard(contar_registros_fn=None):
                     )
                 else:
                     for _, ab_row in df_abast_v.iterrows():
-                        data_ab = (
-                            str(ab_row.get(col_data_abast, "N/A"))
-                            if col_data_abast
-                            else "N/A"
-                        )
+                        data_ab = str(ab_row.get(col_data_abast, "N/A")) if col_data_abast else "N/A"
                         try:
-                            if col_data_abast and pd.notna(
-                                ab_row.get(col_data_abast)
-                            ):
-                                dt_ab = pd.to_datetime(
-                                    ab_row.get(col_data_abast)
-                                )
-                                dt_ab_ajustado = dt_ab - pd.Timedelta(
-                                    hours=3
-                                )
-                                data_ab = dt_ab_ajustado.strftime(
-                                    "%d/%m/%Y %H:%M"
-                                )
+                            if col_data_abast and pd.notna(ab_row.get(col_data_abast)):
+                                dt_ab = pd.to_datetime(ab_row.get(col_data_abast))
+                                dt_ab_ajustado = dt_ab - pd.Timedelta(hours=3)
+                                data_ab = dt_ab_ajustado.strftime("%d/%m/%Y %H:%M")
                         except Exception:
                             pass
 
-                        litros_ab = (
-                            ab_row.get(col_litros_abast, 0)
-                            if col_litros_abast
-                            else 0
-                        )
-                        valor_ab = (
-                            ab_row.get(col_valor_abast, 0)
-                            if col_valor_abast
-                            else 0
-                        )
+                        litros_ab = ab_row.get(col_litros_abast, 0) if col_litros_abast else 0
+                        valor_ab = ab_row.get(col_valor_abast, 0) if col_valor_abast else 0
 
                         col_km_item = next(
-                            (
-                                c
-                                for c in [
-                                    "km",
-                                    "quilometragem",
-                                    "odometro",
-                                    "km_atual",
-                                ]
-                                if c in ab_row
-                            ),
+                            (c for c in ["km", "quilometragem", "odometro", "km_atual"] if c in ab_row),
                             None,
                         )
-                        km_ab = (
-                            ab_row.get(col_km_item, "N/A")
-                            if col_km_item
-                            else "N/A"
-                        )
+                        km_ab = ab_row.get(col_km_item, "N/A") if col_km_item else "N/A"
 
                         with st.container():
                             st.markdown(
@@ -957,42 +773,23 @@ def render_dashboard(contar_registros_fn=None):
                             )
 
                             if col_comprovante_abast:
-                                comprovante_img = ab_row.get(
-                                    col_comprovante_abast
-                                )
+                                comprovante_img = ab_row.get(col_comprovante_abast)
                                 if comprovante_img is not None:
                                     try:
-                                        if isinstance(
-                                            comprovante_img, memoryview
-                                        ):
-                                            comprovante_img = bytes(
-                                                comprovante_img
-                                            )
+                                        if isinstance(comprovante_img, memoryview):
+                                            comprovante_img = bytes(comprovante_img)
 
                                         if isinstance(comprovante_img, bytes):
                                             if len(comprovante_img) > 0:
-                                                img_obj = Image.open(
-                                                    io.BytesIO(comprovante_img)
-                                                )
+                                                img_obj = Image.open(io.BytesIO(comprovante_img))
                                                 st.image(
                                                     img_obj,
                                                     caption=f"🧾 Comprovante ({data_ab}) - Clique para ampliar",
                                                     width=140,
                                                 )
                                         else:
-                                            val_comp_str = str(
-                                                comprovante_img
-                                            ).strip()
-                                            if (
-                                                val_comp_str
-                                                and val_comp_str.lower()
-                                                not in [
-                                                    "none",
-                                                    "nan",
-                                                    "nat",
-                                                    "",
-                                                ]
-                                            ):
+                                            val_comp_str = str(comprovante_img).strip()
+                                            if val_comp_str and val_comp_str.lower() not in ["none", "nan", "nat", ""]:
                                                 st.image(
                                                     comprovante_img,
                                                     caption=f"🧾 Comprovante ({data_ab}) - Clique para ampliar",
@@ -1069,9 +866,7 @@ def render_dashboard(contar_registros_fn=None):
                     digitos_alvo = ("9", "0")
 
                 df_rodizio_veiculos = df_veiculos[
-                    df_veiculos["placa"]
-                    .astype(str)
-                    .str.endswith(digitos_alvo, na=False)
+                    df_veiculos["placa"].astype(str).str.endswith(digitos_alvo, na=False)
                 ]
                 render_cards_veiculos_estilizados(df_rodizio_veiculos)
         else:
@@ -1120,20 +915,10 @@ def render_dashboard(contar_registros_fn=None):
             )
 
             for _, row in df_manutencoes.iterrows():
-                m_desc = row.get(
-                    "descricao",
-                    row.get("servico", row.get("tipo_manutencao", "Manutenção")),
-                )
-                m_custo = row.get(
-                    "valor", row.get("custo", row.get("preco", "0.00"))
-                )
-                m_data = row.get(
-                    "data",
-                    row.get("data_manutencao", row.get("created_at", "N/A")),
-                )
-                m_oficina = row.get(
-                    "oficina", row.get("fornecedor", "Não informada")
-                )
+                m_desc = row.get("descricao", row.get("servico", row.get("tipo_manutencao", "Manutenção")))
+                m_custo = row.get("valor", row.get("custo", row.get("preco", "0.00")))
+                m_data = row.get("data", row.get("data_manutencao", row.get("created_at", "N/A")))
+                m_oficina = row.get("oficina", row.get("fornecedor", "Não informada"))
 
                 st.markdown(
                     f"""
@@ -1184,19 +969,14 @@ def render_dashboard(contar_registros_fn=None):
             )
 
             for _, row in df_ocorrencias.iterrows():
-                oc_desc = row.get(
-                    "descricao",
-                    row.get("titulo", row.get("tipo_ocorrencia", "Ocorrência")),
-                )
+                oc_desc = row.get("descricao", row.get("titulo", row.get("tipo_ocorrencia", "Ocorrência")))
                 oc_status = row.get("status", "Pendente")
                 oc_data = row.get("data", row.get("created_at", "N/A"))
                 oc_resp = row.get("responsavel", row.get("motorista", "N/A"))
 
                 placa_oc = row.get("placa", "")
                 modelo_oc = row.get("modelo", "")
-                veiculo_info = (
-                    f" - {placa_oc} ({modelo_oc})" if placa_oc else ""
-                )
+                veiculo_info = f" - {placa_oc} ({modelo_oc})" if placa_oc else ""
                 foto_oc = row.get("foto", None)
 
                 st.markdown(
@@ -1226,11 +1006,7 @@ def render_dashboard(contar_registros_fn=None):
                                 )
                         else:
                             val_str = str(foto_oc).strip()
-                            if (
-                                val_str
-                                and val_str.lower()
-                                not in ["none", "nan", "nat", ""]
-                            ):
+                            if val_str and val_str.lower() not in ["none", "nan", "nat", ""]:
                                 st.image(
                                     foto_oc,
                                     caption="🔍 Evidência / Foto da Ocorrência - Clique para ampliar",
@@ -1239,13 +1015,9 @@ def render_dashboard(contar_registros_fn=None):
                     except Exception:
                         pass
         else:
-            st.success(
-                "✅ Nenhuma ocorrência ou incidente registado no momento!"
-            )
+            st.success("✅ Nenhuma ocorrência ou incidente registado no momento!")
 
-    # -------------------------------------------------------------------------
-    # ABA: GESTÃO DE DADOS & BACKUPS
-    # -------------------------------------------------------------------------
+    # --- ABA: GESTÃO DE DADOS & BACKUPS ---
     with tab_gestao_dados:
         st.markdown("##### 📥 Exportar Backups & Limpeza de Registos")
         st.caption("Central de controlo para exportar planilhas Excel ou excluir registos indesejados da base de dados.")
@@ -1303,3 +1075,89 @@ def render_dashboard(contar_registros_fn=None):
                 if not df_manutencoes.empty:
                     excel_m = gerar_excel_bytes(df_manutencoes, "Manutencoes")
                     st.download_button(
+                        "🛠 Baixar Manutenções (.xlsx)",
+                        data=excel_m,
+                        file_name="backup_manutencoes_frota.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        use_container_width=True,
+                    )
+            with e_col5:
+                if not df_ocorrencias.empty:
+                    excel_o = gerar_excel_bytes(df_ocorrencias, "Ocorrencias")
+                    st.download_button(
+                        "⚠️ Baixar Ocorrências (.xlsx)",
+                        data=excel_o,
+                        file_name="backup_ocorrencias_frota.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        use_container_width=True,
+                    )
+
+        with sub_del:
+            st.warning("⚠️ Cuidado: A exclusão de registos é permanente na base de dados.")
+
+            tipo_gestao = st.selectbox(
+                "Selecione a Tabela para Apagar o Registo:",
+                ["Abastecimentos", "Checklists", "Ocorrências"],
+            )
+
+            if tipo_gestao == "Abastecimentos":
+                if df_abastecimentos.empty:
+                    st.info("Nenhum abastecimento encontrado.")
+                else:
+                    mapa_ab = {}
+                    for _, r in df_abastecimentos.iterrows():
+                        reg_id = r.get("id")
+                        dt_r = r.get(col_data_abast, "N/A") if col_data_abast else "N/A"
+                        lit_r = r.get(col_litros_abast, 0) if col_litros_abast else 0
+                        val_r = r.get(col_valor_abast, 0) if col_valor_abast else 0
+                        mapa_ab[f"ID {reg_id} | Data: {dt_r} | {lit_r}L | R$ {val_r}"] = reg_id
+
+                    sel_item = st.selectbox("Escolha o Abastecimento:", list(mapa_ab.keys()))
+                    if st.button("🗑 Confirmar Exclusão do Abastecimento", type="primary"):
+                        id_del = mapa_ab[sel_item]
+                        if deletar_registro("abastecimentos", id_del):
+                            st.success("Abastecimento excluído com sucesso!")
+                            st.rerun()
+                        else:
+                            st.error("Erro ao apagar registo.")
+
+            elif tipo_gestao == "Checklists":
+                if df_checklists.empty:
+                    st.info("Nenhum checklist encontrado.")
+                else:
+                    mapa_chk = {}
+                    for _, r in df_checklists.iterrows():
+                        reg_id = r.get("id")
+                        dt_r = r.get("created_at", r.get("data", "N/A"))
+                        km_r = r.get("km", "N/A")
+                        res_r = r.get("resultado", "N/A")
+                        mapa_chk[f"ID {reg_id} | Data: {dt_r} | KM: {km_r} | {res_r}"] = reg_id
+
+                    sel_item = st.selectbox("Escolha o Checklist:", list(mapa_chk.keys()))
+                    if st.button("🗑 Confirmar Exclusão do Checklist", type="primary"):
+                        id_del = mapa_chk[sel_item]
+                        if deletar_registro("checklists", id_del):
+                            st.success("Checklist excluído com sucesso!")
+                            st.rerun()
+                        else:
+                            st.error("Erro ao apagar registo.")
+
+            elif tipo_gestao == "Ocorrências":
+                if df_ocorrencias.empty:
+                    st.info("Nenhuma ocorrência encontrada.")
+                else:
+                    mapa_oc = {}
+                    for _, r in df_ocorrencias.iterrows():
+                        reg_id = r.get("id")
+                        desc_r = r.get("descricao", r.get("titulo", "Ocorrência"))
+                        st_r = r.get("status", "Pendente")
+                        mapa_oc[f"ID {reg_id} | {desc_r[:30]}... | Status: {st_r}"] = reg_id
+
+                    sel_item = st.selectbox("Escolha a Ocorrência:", list(mapa_oc.keys()))
+                    if st.button("🗑 Confirmar Exclusão da Ocorrência", type="primary"):
+                        id_del = mapa_oc[sel_item]
+                        if deletar_registro("ocorrencias", id_del):
+                            st.success("Ocorrência excluída com sucesso!")
+                            st.rerun()
+                        else:
+                            st.error("Erro ao apagar registo.")
