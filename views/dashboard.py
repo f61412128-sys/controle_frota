@@ -116,9 +116,38 @@ def ler_tabela_direta(query):
         cursor.close()
         conn.close()
         return df
-    except Exception as e:
+    except Exception:
         conn.close()
         return pd.DataFrame()
+
+
+def deletar_registro(tabela, id_registro):
+    """Executa a exclusão segura de um registro por ID."""
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute(f"DELETE FROM {tabela} WHERE id = %s", (id_registro,))
+        conn.commit()
+        cursor.close()
+        conn.close()
+        return True
+    except Exception:
+        conn.close()
+        return False
+
+
+def gerar_excel_bytes(df, nome_aba="Dados"):
+    """Gera o arquivo binário em Excel (.xlsx) para download sem colunas binárias."""
+    output = io.BytesIO()
+    # Remove colunas de fotos/blobs para não corromper o Excel
+    df_export = df.copy()
+    for col in df_export.columns:
+        if any(k in col.lower() for k in ["foto", "imagem", "comprovante", "anexo", "bytes", "blob"]):
+            df_export.drop(columns=[col], inplace=True, errors="ignore")
+
+    with pd.ExcelWriter(output, engine="openpyxl") as writer:
+        df_export.to_excel(writer, index=False, sheet_name=nome_aba)
+    return output.getvalue()
 
 
 def render_dashboard(contar_registros_fn=None):
@@ -173,7 +202,6 @@ def render_dashboard(contar_registros_fn=None):
         )
         has_chk_id = "checklist_id" in cols_oc
 
-        # Tenta enriquecer com joins se as tabelas relacionadas existirem
         try:
             if foto_oc_col and has_chk_id:
                 query_ocorr = f"""
@@ -214,7 +242,6 @@ def render_dashboard(contar_registros_fn=None):
             break
 
     if df_checklists.empty:
-        # Busca genérica por aproximação de nome de checklist se necessário
         conn = get_connection()
         try:
             cursor = conn.cursor()
@@ -306,7 +333,7 @@ def render_dashboard(contar_registros_fn=None):
                         except Exception:
                             pass
 
-                    if consumo_str == "Não calculado":
+                    if consumo_str == "Não calculated":
                         for c_med in [
                             "consumo_medio",
                             "media_km_l",
@@ -437,7 +464,7 @@ def render_dashboard(contar_registros_fn=None):
         df_veiculos["ultimo_tipo_movimento"] = ""
         df_veiculos["ultimo_data_hora"] = "N/A"
         df_veiculos["ultimo_endereco"] = "Não informado"
-        df_veiculos["consumo_medio"] = "Não calculado"
+        df_veiculos["consumo_medio"] = "Não calculated"
 
     custo_total_manut = 0.0
     if not df_manutencoes.empty:
@@ -572,12 +599,14 @@ def render_dashboard(contar_registros_fn=None):
         tab_rodizio,
         tab_manut,
         tab_pendencias,
+        tab_gestao_dados,
     ) = st.tabs([
         "📄 Gestão de Contratos & Frota",
         "⛽ Consumo & Abastecimentos",
         "🚘 Rodízio Hoje",
         "🛠 Manutenções Recentes",
         "⚠ Ocorrências",
+        "📥 Gestão de Dados & Backups",
     ])
 
     with tab_contratos:
@@ -1133,3 +1162,150 @@ def render_dashboard(contar_registros_fn=None):
             st.success(
                 "✅ Nenhuma ocorrência ou incidente registado no momento!"
             )
+
+    # -------------------------------------------------------------------------
+    # ABA 6: GESTÃO DE DADOS & BACKUPS (NOVA)
+    # -------------------------------------------------------------------------
+    with tab_gestao_dados:
+        st.markdown("##### 📥 Exportar Backups & Limpeza de Registos")
+        st.caption("Central de controlo para exportar planilhas Excel ou excluir registos indesejados da base de dados.")
+
+        sub_exp, sub_del = st.tabs(["📥 Exportar para Excel (.xlsx)", "🗑 Apagar Registos Incorretos"])
+
+        with sub_exp:
+            st.write("Selecione os módulos que deseja descarregar em planilha:")
+
+            e_col1, e_col2, e_col3 = st.columns(3)
+
+            with e_col1:
+                if not df_checklists.empty:
+                    excel_chk = gerar_excel_bytes(df_checklists, "Checklists")
+                    st.download_button(
+                        "📊 Baixar Checklists (.xlsx)",
+                        data=excel_chk,
+                        file_name="backup_checklists_frota.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        use_container_width=True,
+                    )
+                else:
+                    st.info("Sem checklists para exportar.")
+
+            with e_col2:
+                if not df_abastecimentos.empty:
+                    excel_abast = gerar_excel_bytes(df_abastecimentos, "Abastecimentos")
+                    st.download_button(
+                        "⛽ Baixar Abastecimentos (.xlsx)",
+                        data=excel_abast,
+                        file_name="backup_abastecimentos_frota.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        use_container_width=True,
+                    )
+                else:
+                    st.info("Sem abastecimentos para exportar.")
+
+            with e_col3:
+                if not df_veiculos.empty:
+                    excel_v = gerar_excel_bytes(df_veiculos, "Veiculos")
+                    st.download_button(
+                        "🚚 Baixar Lista de Veículos (.xlsx)",
+                        data=excel_v,
+                        file_name="backup_veiculos_frota.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        use_container_width=True,
+                    )
+                else:
+                    st.info("Sem veículos para exportar.")
+
+            st.divider()
+
+            e_col4, e_col5 = st.columns(2)
+            with e_col4:
+                if not df_manutencoes.empty:
+                    excel_m = gerar_excel_bytes(df_manutencoes, "Manutencoes")
+                    st.download_button(
+                        "🛠 Baixar Manutenções (.xlsx)",
+                        data=excel_m,
+                        file_name="backup_manutencoes_frota.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        use_container_width=True,
+                    )
+            with e_col5:
+                if not df_ocorrencias.empty:
+                    excel_o = gerar_excel_bytes(df_ocorrencias, "Ocorrencias")
+                    st.download_button(
+                        "⚠️ Baixar Ocorrências (.xlsx)",
+                        data=excel_o,
+                        file_name="backup_ocorrencias_frota.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        use_container_width=True,
+                    )
+
+        with sub_del:
+            st.warning("⚠️ Cuidado: A exclusão de registos é permanente na base de dados.")
+
+            tipo_gestao = st.selectbox(
+                "Selecione a Tabela para Apagar o Registo:",
+                ["Abastecimentos", "Checklists", "Ocorrências"],
+            )
+
+            if tipo_gestao == "Abastecimentos":
+                if df_abastecimentos.empty:
+                    st.info("Nenhum abastecimento encontrado.")
+                else:
+                    mapa_ab = {}
+                    for _, r in df_abastecimentos.iterrows():
+                        reg_id = r.get("id")
+                        dt_r = r.get(col_data_abast, "N/A") if col_data_abast else "N/A"
+                        lit_r = r.get(col_litros_abast, 0) if col_litros_abast else 0
+                        val_r = r.get(col_valor_abast, 0) if col_valor_abast else 0
+                        mapa_ab[f"ID {reg_id} | Data: {dt_r} | {lit_r}L | R$ {val_r}"] = reg_id
+
+                    sel_item = st.selectbox("Escolha o Abastecimento:", list(mapa_ab.keys()))
+                    if st.button("🗑 Confirmar Exclusão do Abastecimento", type="primary"):
+                        id_del = mapa_ab[sel_item]
+                        if deletar_registro("abastecimentos", id_del):
+                            st.success("Abastecimento excluído com sucesso!")
+                            st.rerun()
+                        else:
+                            st.error("Erro ao apagar registo.")
+
+            elif tipo_gestao == "Checklists":
+                if df_checklists.empty:
+                    st.info("Nenhum checklist encontrado.")
+                else:
+                    mapa_chk = {}
+                    for _, r in df_checklists.iterrows():
+                        reg_id = r.get("id")
+                        dt_r = r.get("created_at", r.get("data", "N/A"))
+                        km_r = r.get("km", "N/A")
+                        res_r = r.get("resultado", "N/A")
+                        mapa_chk[f"ID {reg_id} | Data: {dt_r} | KM: {km_r} | {res_r}"] = reg_id
+
+                    sel_item = st.selectbox("Escolha o Checklist:", list(mapa_chk.keys()))
+                    if st.button("🗑 Confirmar Exclusão do Checklist", type="primary"):
+                        id_del = mapa_chk[sel_item]
+                        if deletar_registro("checklists", id_del):
+                            st.success("Checklist excluído com sucesso!")
+                            st.rerun()
+                        else:
+                            st.error("Erro ao apagar registo.")
+
+            elif tipo_gestao == "Ocorrências":
+                if df_ocorrencias.empty:
+                    st.info("Nenhuma ocorrência encontrada.")
+                else:
+                    mapa_oc = {}
+                    for _, r in df_ocorrencias.iterrows():
+                        reg_id = r.get("id")
+                        desc_r = r.get("descricao", r.get("titulo", "Ocorrência"))
+                        st_r = r.get("status", "Pendente")
+                        mapa_oc[f"ID {reg_id} | {desc_r[:30]}... | Status: {st_r}"] = reg_id
+
+                    sel_item = st.selectbox("Escolha a Ocorrência:", list(mapa_oc.keys()))
+                    if st.button("🗑 Confirmar Exclusão da Ocorrência", type="primary"):
+                        id_del = mapa_oc[sel_item]
+                        if deletar_registro("ocorrencias", id_del):
+                            st.success("Ocorrência excluída com sucesso!")
+                            st.rerun()
+                        else:
+                            st.error("Erro ao apagar registo.")
