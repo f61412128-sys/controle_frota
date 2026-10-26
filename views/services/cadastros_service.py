@@ -6,31 +6,42 @@ from database.connection import get_connection
 
 
 def autenticar_usuario(login_input, senha_input):
+    if not login_input or not senha_input:
+        return None
+
+    # Limpa espaços acidentais do teclado do telemóvel e padroniza para minúsculas
+    login_limpo = str(login_input).strip().lower()
+    senha_limpa = str(senha_input).strip()
+
     conn = get_connection()
     try:
         cursor = conn.cursor()
+        # Ignora diferenças de maiúsculas/minúsculas e remove espaços no banco de dados
         cursor.execute(
-            "SELECT * FROM usuarios WHERE login = %s", (login_input,)
+            "SELECT * FROM usuarios WHERE LOWER(TRIM(login)) = %s", (login_limpo,)
         )
         user = cursor.fetchone()
+
+        if not user:
+            return None
+
+        # Como usamos DictCursor, podemos aceder como dicionário
+        user_dict = dict(user)
+        campo_senha = "senha" if "senha" in user_dict else "senha_hash"
+
+        senha_db = str(user_dict.get(campo_senha, "")).strip()
+
+        if campo_senha in user_dict and senha_db == senha_limpa:
+            if "status" in user_dict and user_dict["status"] != "Ativo":
+                return None
+            return user_dict
+
+        return None
+    except Exception as e:
+        print(f"Erro na autenticação: {e}")
+        return None
     finally:
         conn.close()
-
-    if not user:
-        return None
-
-    # Como usamos DictCursor, podemos aceder como dicionário
-    user_dict = dict(user)
-    campo_senha = "senha" if "senha" in user_dict else "senha_hash"
-
-    if campo_senha in user_dict and str(user_dict[campo_senha]) == str(
-        senha_input
-    ):
-        if "status" in user_dict and user_dict["status"] != "Ativo":
-            return None
-        return user_dict
-
-    return None
 
 
 def salvar_usuario(nome, login, senha, perfil="motorista"):
@@ -172,7 +183,6 @@ def garantir_tabela_veiculos():
         """
         )
 
-        # Equivalente ao PRAGMA do SQLite para PostgreSQL usando information_schema
         cursor.execute(
             "SELECT column_name FROM information_schema.columns WHERE table_name = 'veiculos'"
         )
