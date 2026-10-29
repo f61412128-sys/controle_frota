@@ -154,7 +154,6 @@ else:
     if st.session_state["perfil"] == "motorista":
         st.info("📱 Área do Motorista")
         
-        # Permite alternar entre os módulos permitidos para o motorista
         modulo_motorista = st.radio(
             "Selecione a Ação:",
             ["Checklist", "Abastecimentos"],
@@ -181,7 +180,6 @@ else:
             "Abastecimentos",
         ]
 
-        # Recupera a última aba salva na URL ou usa "Dashboard" como padrão
         menu_atual_url = st.query_params.get("aba", "Dashboard")
         indice_atual = (
             opcoes_menu.index(menu_atual_url)
@@ -196,7 +194,6 @@ else:
             label_visibility="collapsed",
         )
 
-        # Atualiza o parâmetro na URL sempre que o usuário trocar de módulo
         if opcao != menu_atual_url:
             st.query_params["aba"] = opcao
             st.rerun()
@@ -579,7 +576,7 @@ else:
                         "Categoria CNH",
                         ["A", "B", "C", "D", "E", "AB", "AC", "AD", "AE"],
                     )
-                    validade = st.date_input("Validade CNH")
+                    validade = st.date_input("Validade CNH", value=datetime.date.today())
 
                     if st.form_submit_button("Salvar Motorista"):
                         if nome and cpf:
@@ -595,12 +592,11 @@ else:
                         f"{m['nome']} ({m['cpf_matricula']})": dict(m)
                         for m in motoristas
                     }
-                    m_dados = mapa_m[
-                        st.selectbox(
-                            "Selecione o Motorista para Editar",
-                            list(mapa_m.keys()),
-                        )
-                    ]
+                    m_selecionado = st.selectbox(
+                        "Selecione o Motorista para Editar",
+                        list(mapa_m.keys()),
+                    )
+                    m_dados = mapa_m[m_selecionado]
 
                     with st.form("form_editar_motorista"):
                         c1, c2 = st.columns(2)
@@ -628,13 +624,30 @@ else:
                             "AD",
                             "AE",
                         ]
+                        idx_cat = (
+                            cats.index(m_dados.get("categoria_cnh"))
+                            if m_dados.get("categoria_cnh") in cats
+                            else 1
+                        )
                         e_cat = c5.selectbox(
                             "Categoria CNH",
                             cats,
-                            index=cats.index(m_dados.get("categoria_cnh"))
-                            if m_dados.get("categoria_cnh") in cats
-                            else 1,
+                            index=idx_cat,
                         )
+
+                        # Tratamento seguro da data de validade da CNH para exibição no campo
+                        dt_val_cnh = datetime.date.today()
+                        raw_validade = m_dados.get("validade_cnh")
+                        if raw_validade:
+                            if isinstance(raw_validade, datetime.date):
+                                dt_val_cnh = raw_validade
+                            else:
+                                try:
+                                    dt_val_cnh = datetime.date.fromisoformat(str(raw_validade).split()[0])
+                                except Exception:
+                                    pass
+
+                        e_validade = st.date_input("Validade CNH", value=dt_val_cnh)
 
                         e_status = st.selectbox(
                             "Status",
@@ -652,11 +665,13 @@ else:
                                 e_tel,
                                 e_cnh,
                                 e_cat,
-                                datetime.date.today(),
+                                e_validade,
                                 e_status,
                             )
-                            st.success("Motorista atualizado!")
+                            st.success("Motorista atualizado com sucesso!")
                             st.rerun()
+                else:
+                    st.info("Nenhum motorista cadastrado.")
 
         elif opcao == "Checklist":
             render_checklist()
