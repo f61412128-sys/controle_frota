@@ -94,14 +94,21 @@ if "logado" not in st.session_state:
 if not st.session_state["logado"]:
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
-        # --- EXIBIÇÃO DO LOGOTIPO CENTRALIZADO NA TELA DE LOGIN ---
-        logo_path = "logo.png"
-        if os.path.exists(logo_path):
-            st.image(logo_path, use_container_width=True)
-        else:
-            # Fallback para nomes antigos caso necessário
-            if os.path.exists("NossoAr-e-Coldbox---Colorido.png"):
-                st.image("NossoAr-e-Coldbox---Colorido.png", use_container_width=True)
+        # --- EXIBIÇÃO ROBUSTA DO LOGOTIPO NA TELA DE LOGIN ---
+        exibiu_logo = False
+        for nome_img in ["logo.png", "NossoAr-e-Coldbox---Colorido.png", "logo_colorido.png"]:
+            if os.path.exists(nome_img):
+                st.image(nome_img, use_container_width=True)
+                exibiu_logo = True
+                break
+        
+        if not exibiu_logo:
+            # Tenta procurar caso esteja na pasta raiz com maiúsculas ou outro formato
+            for f in os.listdir("."):
+                if f.lower().endswith(('.png', '.jpg', '.jpeg')) and 'logo' in f.lower():
+                    st.image(f, use_container_width=True)
+                    exibiu_logo = True
+                    break
 
         st.subheader("Acesso ao Sistema")
 
