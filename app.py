@@ -73,7 +73,7 @@ except Exception as e:
     st.exception(e)
     st.stop()
 
-# --- GESTÃO DE SESSÃO ORIGINAL E BLINDADA (ANTI-REFRESH) ---
+# --- GESTÃO DE SESSÃO COM URL BLINDADA (ANTI-REFRESH) ---
 params = st.query_params
 
 if "logado" not in st.session_state:
@@ -97,8 +97,6 @@ if not st.session_state["logado"]:
         # --- EXIBIÇÃO DA LOGO NA TELA DE LOGIN ---
         if os.path.exists("logo.png"):
             st.image("logo.png", use_container_width=True)
-        else:
-            st.info("💡 Para exibir a logo aqui, adicione o ficheiro 'logo.png' na raiz do projeto no GitHub.")
 
         st.title("🚚 Controle de Frota")
         st.subheader("Acesso ao Sistema")
@@ -108,34 +106,41 @@ if not st.session_state["logado"]:
         btn_entrar = st.button("Entrar", use_container_width=True)
 
         if btn_entrar:
-            usuario_db = autenticar_usuario(usuario_input, senha_input)
+            # Validação prioritária e direta do Administrador Mestre
+            if usuario_input.strip().lower() == "admin" and senha_input.strip() == "admin123":
+                st.session_state["logado"] = True
+                st.session_state["perfil"] = "admin"
+                st.session_state["usuario_nome"] = "Administrador Mestre"
+                st.session_state["motorista_id"] = ""
 
-            if usuario_db or (
-                usuario_input.lower() == "admin" and senha_input == "admin123"
-            ):
+                st.query_params["logado"] = "true"
+                st.query_params["perfil"] = "admin"
+                st.query_params["nome"] = "Administrador Mestre"
+
+                st.rerun()
+            else:
+                # Validação para os demais utilizadores no banco de dados
+                usuario_db = autenticar_usuario(usuario_input, senha_input)
+
                 if usuario_db:
                     perfil = usuario_db["perfil"]
                     nome = usuario_db["login"].capitalize()
                     mot_id = usuario_db["motorista_id"]
+
+                    st.session_state["logado"] = True
+                    st.session_state["perfil"] = perfil
+                    st.session_state["usuario_nome"] = nome
+                    st.session_state["motorista_id"] = mot_id
+
+                    st.query_params["logado"] = "true"
+                    st.query_params["perfil"] = perfil
+                    st.query_params["nome"] = nome
+                    if mot_id:
+                        st.query_params["motorista_id"] = str(mot_id)
+
+                    st.rerun()
                 else:
-                    perfil = "admin"
-                    nome = "Administrador Mestre"
-                    mot_id = ""
-
-                st.session_state["logado"] = True
-                st.session_state["perfil"] = perfil
-                st.session_state["usuario_nome"] = nome
-                st.session_state["motorista_id"] = mot_id
-
-                st.query_params["logado"] = "true"
-                st.query_params["perfil"] = perfil
-                st.query_params["nome"] = nome
-                if mot_id:
-                    st.query_params["motorista_id"] = str(mot_id)
-
-                st.rerun()
-            else:
-                st.error("Usuário ou senha incorretos.")
+                    st.error("Usuário ou senha incorretos.")
 
 else:
     # --- CABEÇALHO SUPERIOR FIXO PARA O TELEMÓVEL (MENU + LOGOUT) ---
