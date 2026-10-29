@@ -94,19 +94,14 @@ if "logado" not in st.session_state:
 if not st.session_state["logado"]:
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
-        # --- EXIBIÇÃO DOS DOIS LOGOS LADO A LADO NA TELA DE LOGIN ---
-        logo_path = "NossoAr-e-Coldbox---Colorido.png"
+        # --- EXIBIÇÃO DO LOGOTIPO CENTRALIZADO NA TELA DE LOGIN ---
+        logo_path = "logo.png"
         if os.path.exists(logo_path):
             st.image(logo_path, use_container_width=True)
         else:
-            # Fallback caso encontre imagens separadas ou com outro nome
-            l_col1, l_col2 = st.columns(2)
-            with l_col1:
-                if os.path.exists("NossoAr.png"):
-                    st.image("NossoAr.png", use_container_width=True)
-            with l_col2:
-                if os.path.exists("Coldbox.png"):
-                    st.image("Coldbox.png", use_container_width=True)
+            # Fallback para nomes antigos caso necessário
+            if os.path.exists("NossoAr-e-Coldbox---Colorido.png"):
+                st.image("NossoAr-e-Coldbox---Colorido.png", use_container_width=True)
 
         st.subheader("Acesso ao Sistema")
 
