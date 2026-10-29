@@ -38,7 +38,6 @@ def render_veiculos():
         opcoes_motoristas = {m["nome"]: m["id"] for m in motoristas}
 
         with st.form("form_veiculo", clear_on_submit=True):
-            # RÁDIO DENTRO DO FORMULÁRIO
             tipo_propriedade = st.radio(
                 "Propriedade do Veículo",
                 ["Próprio", "Alugado"],
@@ -65,7 +64,6 @@ def render_veiculos():
             km_atual = col7.number_input("KM Atual", min_value=0, value=0)
             chassi = col8.text_input("Chassi")
 
-            # CAMPOS CONDICIONAIS SE FOR ALUGADO
             locadora, inicio_contrato, fim_contrato, valor_mensal = None, None, None, 0.0
             if tipo_propriedade == "Alugado":
                 st.markdown("---")
@@ -138,7 +136,6 @@ def render_veiculos():
             v_dados = opcoes_v[v_selecionado_str]
 
             with st.form("form_editar_veiculo"):
-                # RÁDIO DENTRO DO FORMULÁRIO PARA CAPTURAR CORRETAMENTE O VALOR
                 prop_atual = v_dados.get("tipo_propriedade") or "Próprio"
                 idx_prop = 0 if prop_atual == "Próprio" else 1
                 v_tipo_propriedade = st.radio(
@@ -193,7 +190,6 @@ def render_veiculos():
                     "Chassi", value=v_dados.get("chassi") or ""
                 )
 
-                # CAMPOS CONDICIONAIS DE LOCAÇÃO DENTRO DO FORMULÁRIO
                 v_locadora, v_inicio_contrato, v_fim_contrato, v_valor_mensal = None, None, None, 0.0
                 if v_tipo_propriedade == "Alugado":
                     st.markdown("---")
@@ -310,7 +306,7 @@ def render_motoristas():
                 "Categoria CNH",
                 ["A", "B", "C", "D", "E", "AB", "AC", "AD", "AE"],
             )
-            validade_cnh = st.date_input("Validade CNH")
+            validade_cnh = st.date_input("Validade CNH", value=datetime.date.today())
 
             btn_salvar_m = st.form_submit_button("Guardar Motorista")
 
@@ -332,7 +328,7 @@ def render_motoristas():
                     except Exception as e:
                         st.error(f"Erro ao cadastrar: {e}")
 
-    # --- SUB-ABA 3: EDITAR MOTORISTA ---
+    # --- SUB-ABA 3: EDITAR MOTORISTA (CORRIGIDA E COMPLETA) ---
     with sub_tab_m_editar:
         st.subheader("Editar Dados do Motorista")
         motoristas = listar_motoristas()
@@ -351,10 +347,10 @@ def render_motoristas():
             with st.form("form_editar_motorista"):
                 col1, col2 = st.columns(2)
                 m_nome = col1.text_input(
-                    "Nome Completo*", value=m_dados["nome"]
+                    "Nome Completo*", value=m_dados.get("nome") or ""
                 )
                 m_cpf = col2.text_input(
-                    "CPF / Matrícula*", value=m_dados["cpf_matricula"]
+                    "CPF / Matrícula*", value=m_dados.get("cpf_matricula") or ""
                 )
 
                 col3, col4, col5 = st.columns(3)
@@ -364,25 +360,29 @@ def render_motoristas():
                 m_cnh = col4.text_input("Nº CNH", value=m_dados.get("cnh") or "")
 
                 cats = ["A", "B", "C", "D", "E", "AB", "AC", "AD", "AE"]
-                idx_cat = (
-                    cats.index(m_dados["categoria_cnh"])
-                    if m_dados.get("categoria_cnh") in cats
-                    else 1
-                )
+                cat_atual = m_dados.get("categoria_cnh")
+                idx_cat = cats.index(cat_atual) if cat_atual in cats else 1
                 m_categoria = col5.selectbox("Categoria CNH", cats, index=idx_cat)
 
+                # TRATAMENTO SEGURO DA DATA DE VALIDADE DA CNH
                 dt_val_cnh = datetime.date.today()
-                if m_dados.get("validade_cnh"):
-                    try:
-                        dt_val_cnh = datetime.date.fromisoformat(m_dados["validade_cnh"])
-                    except Exception:
-                        pass
+                raw_validade = m_dados.get("validade_cnh")
+                if raw_validade:
+                    if isinstance(raw_validade, datetime.date):
+                        dt_val_cnh = raw_validade
+                    else:
+                        try:
+                            dt_val_cnh = datetime.date.fromisoformat(str(raw_validade).strip())
+                        except Exception:
+                            pass
+
                 m_validade_cnh = st.date_input("Validade CNH", value=dt_val_cnh)
 
                 m_status_opcoes = ["Ativo", "Inativo"]
+                status_atual = m_dados.get("status") or "Ativo"
                 idx_status = (
-                    m_status_opcoes.index(m_dados["status"])
-                    if m_dados.get("status") in m_status_opcoes
+                    m_status_opcoes.index(status_atual)
+                    if status_atual in m_status_opcoes
                     else 0
                 )
                 m_status = st.selectbox(
