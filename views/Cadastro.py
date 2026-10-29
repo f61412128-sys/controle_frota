@@ -328,7 +328,7 @@ def render_motoristas():
                     except Exception as e:
                         st.error(f"Erro ao cadastrar: {e}")
 
-    # --- SUB-ABA 3: EDITAR MOTORISTA (AGORA COM TODOS OS CAMPOS) ---
+    # --- SUB-ABA 3: EDITAR MOTORISTA (COM VALIDADE DA CNH E SEM O CAMPO STATUS) ---
     with sub_tab_m_editar:
         st.subheader("Editar Dados do Motorista")
         motoristas = listar_motoristas()
@@ -364,7 +364,7 @@ def render_motoristas():
                 idx_cat = cats.index(cat_atual) if cat_atual in cats else 1
                 m_categoria = col5.selectbox("Categoria CNH", cats, index=idx_cat)
 
-                # TRATAMENTO SEGURO DA DATA DE VALIDADE DA CNH (AGORA VISÍVEL NA EDIÇÃO)
+                # TRATAMENTO SEGURO DA DATA DE VALIDADE DA CNH (IGUAL AO CADASTRO)
                 dt_val_cnh = datetime.date.today()
                 raw_validade = m_dados.get("validade_cnh")
                 if raw_validade:
@@ -378,16 +378,8 @@ def render_motoristas():
 
                 m_validade_cnh = st.date_input("Validade CNH", value=dt_val_cnh)
 
-                m_status_opcoes = ["Ativo", "Inativo"]
+                # Mantém o status atual oculto para não perder a informação na base de dados ao atualizar
                 status_atual = m_dados.get("status") or "Ativo"
-                idx_status = (
-                    m_status_opcoes.index(status_atual)
-                    if status_atual in m_status_opcoes
-                    else 0
-                )
-                m_status = st.selectbox(
-                    "Status", m_status_opcoes, index=idx_status
-                )
 
                 btn_atualizar_m = st.form_submit_button("Atualizar Motorista")
 
@@ -404,7 +396,7 @@ def render_motoristas():
                                 m_cnh,
                                 m_categoria,
                                 m_validade_cnh,
-                                m_status,
+                                status_atual,
                             )
                             st.success(
                                 f"Motorista {m_nome} atualizado com sucesso!"
