@@ -207,12 +207,12 @@ def render_veiculos():
                     dt_fim = datetime.date.today()
                     if v_dados.get("inicio_contrato"):
                         try:
-                            dt_ini = datetime.date.fromisoformat(v_dados["inicio_contrato"])
+                            dt_ini = datetime.date.fromisoformat(str(v_dados["inicio_contrato"]))
                         except Exception:
                             pass
                     if v_dados.get("fim_contrato"):
                         try:
-                            dt_fim = datetime.date.fromisoformat(v_dados["fim_contrato"])
+                            dt_fim = datetime.date.fromisoformat(str(v_dados["fim_contrato"]))
                         except Exception:
                             pass
 
@@ -301,14 +301,14 @@ def render_motoristas():
 
             col3, col4, col5 = st.columns(3)
             telefone = col3.text_input("Telefone")
-            cnh = col4.text_input("Nº CNH")
+            cnh = col4.text_input("Número CNH")
             categoria = col5.selectbox(
                 "Categoria CNH",
                 ["A", "B", "C", "D", "E", "AB", "AC", "AD", "AE"],
             )
             validade_cnh = st.date_input("Validade CNH", value=datetime.date.today())
 
-            btn_salvar_m = st.form_submit_button("Guardar Motorista")
+            btn_salvar_m = st.form_submit_button("Salvar Motorista")
 
             if btn_salvar_m:
                 if not nome or not cpf:
@@ -328,7 +328,7 @@ def render_motoristas():
                     except Exception as e:
                         st.error(f"Erro ao cadastrar: {e}")
 
-    # --- SUB-ABA 3: EDITAR MOTORISTA (CORRIGIDA E COMPLETA) ---
+    # --- SUB-ABA 3: EDITAR MOTORISTA (AGORA COM TODOS OS CAMPOS) ---
     with sub_tab_m_editar:
         st.subheader("Editar Dados do Motorista")
         motoristas = listar_motoristas()
@@ -357,14 +357,14 @@ def render_motoristas():
                 m_telefone = col3.text_input(
                     "Telefone", value=m_dados.get("telefone") or ""
                 )
-                m_cnh = col4.text_input("Nº CNH", value=m_dados.get("cnh") or "")
+                m_cnh = col4.text_input("Número CNH", value=m_dados.get("cnh") or "")
 
                 cats = ["A", "B", "C", "D", "E", "AB", "AC", "AD", "AE"]
                 cat_atual = m_dados.get("categoria_cnh")
                 idx_cat = cats.index(cat_atual) if cat_atual in cats else 1
                 m_categoria = col5.selectbox("Categoria CNH", cats, index=idx_cat)
 
-                # TRATAMENTO SEGURO DA DATA DE VALIDADE DA CNH
+                # TRATAMENTO SEGURO DA DATA DE VALIDADE DA CNH (AGORA VISÍVEL NA EDIÇÃO)
                 dt_val_cnh = datetime.date.today()
                 raw_validade = m_dados.get("validade_cnh")
                 if raw_validade:
@@ -389,7 +389,7 @@ def render_motoristas():
                     "Status", m_status_opcoes, index=idx_status
                 )
 
-                btn_atualizar_m = st.form_submit_button("💾 Atualizar Motorista")
+                btn_atualizar_m = st.form_submit_button("Atualizar Motorista")
 
                 if btn_atualizar_m:
                     if not m_nome or not m_cpf:
