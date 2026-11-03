@@ -127,7 +127,7 @@ def carregar_manutencoes():
 
 
 def render():
-    st.title("🛠️️ Controle de Manutenções")
+    st.title("🛠 Controle de Manutenções")
 
     tab1, tab2, tab3 = st.tabs([
         "📋 Histórico",
@@ -180,7 +180,11 @@ def render():
             )
 
             col1, col2 = st.columns(2)
-            tipo = col1.selectbox("Tipo de Manutenção*", ["Preventiva", "Corretiva"])
+            # Adicionada a opção profissional "Troca de Óleo" diretamente no tipo de manutenção
+            tipo = col1.selectbox(
+                "Tipo de Manutenção*", 
+                ["Troca de Óleo", "Preventiva", "Corretiva"]
+            )
             status = col2.selectbox(
                 "Status*", ["Concluída", "Em andamento", "Agendada"]
             )
@@ -198,8 +202,11 @@ def render():
 
             col6, col7 = st.columns(2)
             data_manut = col6.date_input("Data do Serviço")
+            
+            # Se for Troca de Óleo, o padrão lógico ideal para a próxima revisão já passa a ser +10.000 km
+            val_proximo_km = (int(km_registro) + 10000) if tipo == "Troca de Óleo" else 15000
             proximo_km = col7.number_input(
-                "Próxima Revisão (KM)", min_value=0, value=15000
+                "Próxima Revisão (KM)", min_value=0, value=val_proximo_km
             )
 
             btn_salvar = st.form_submit_button("Salvar Manutenção")
@@ -235,7 +242,7 @@ def render():
             gasto_total = df_manut["valor"].sum()
             st.metric(
                 label="Gasto Total em Manutenção",
-                value=f"R$ {gasto_total:,.2f}",
+                value=f"R$ {gaseto_total:,.2f}" if 'gaseto_total' in locals() else f"R$ {gasto_total:,.2f}",
             )
 
             st.divider()
