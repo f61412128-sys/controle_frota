@@ -92,7 +92,6 @@ def render_cards_veiculos_estilizados(df_veiculos, df_manutencoes):
                 df_m_veiculo = df_manutencoes[df_manutencoes[col_v_id] == v_id]
                 if not df_m_veiculo.empty:
                     try:
-                        # Tenta ordenar pelo ID ou pela data para pegar a mais recente
                         sort_col = "id" if "id" in df_m_veiculo.columns else df_m_veiculo.columns[0]
                         df_m_veiculo = df_m_veiculo.sort_values(by=sort_col, ascending=False)
                         val_km_manut = df_m_veiculo.iloc[0][col_km_m]
@@ -101,7 +100,6 @@ def render_cards_veiculos_estilizados(df_veiculos, df_manutencoes):
                     except Exception:
                         pass
 
-        # Se houver registo de manutenção, calcula com base nele; caso contrário, assume 0 (referência inicial)
         km_rodados_desde_troca = km_atual - km_ultima_troca
         if km_rodados_desde_troca < 0:
             km_rodados_desde_troca = 0.0
@@ -461,6 +459,8 @@ def render_dashboard(contar_registros_fn=None):
             df_contratos = df_temp
             break
 
+    # Filtro/Localização dos contratos vencidos na tabela de contratos dedicada
+    df_contratos_vencidos = pd.DataFrame()
     if not df_contratos.empty:
         col_venc = None
         for c in ["data_fim", "vencimento", "termino_contrato", "data_termino", "vencimento_contrato", "data_vencimento"]:
@@ -472,13 +472,14 @@ def render_dashboard(contar_registros_fn=None):
                 hoje = pd.Timestamp.now().normalize()
                 datas_venc = pd.to_datetime(df_contratos[col_venc], errors="coerce")
                 limite = hoje + pd.Timedelta(days=30)
-                total_venc_contratos = int(
-                    ((datas_venc >= hoje) & (datas_venc <= limite)).sum()
-                    + (datas_venc < hoje).sum()
-                )
+                mask_venc = (datas_venc >= hoje) & (datas_venc <= limite) | (datas_venc < hoje)
+                df_contratos_vencidos = df_contratos[mask_venc].copy()
+                total_venc_contratos = int(mask_venc.sum())
             except Exception:
                 pass
 
+    # Se não encontrou na tabela separada, procura diretamente na tabela de veículos
+    df_veiculos_vencidos = pd.DataFrame()
     if total_venc_contratos == 0 and not df_veiculos.empty:
         col_venc_v = None
         for c in ["vencimento_contrato", "data_fim_contrato", "fim_contrato", "vencimento", "data_vencimento"]:
@@ -490,10 +491,9 @@ def render_dashboard(contar_registros_fn=None):
                 hoje = pd.Timestamp.now().normalize()
                 datas_venc = pd.to_datetime(df_veiculos[col_venc_v], errors="coerce")
                 limite = hoje + pd.Timedelta(days=30)
-                total_venc_contratos = int(
-                    ((datas_venc >= hoje) & (datas_venc <= limite)).sum()
-                    + (datas_venc < hoje).sum()
-                )
+                mask_venc_v = (datas_venc >= hoje) & (datas_venc <= limite) | (datas_venc < hoje)
+                df_veiculos_vencidos = df_veiculos[mask_venc_v].copy()
+                total_venc_contratos = int(mask_venc_v.sum())
             except Exception:
                 pass
 
@@ -602,7 +602,11 @@ def render_dashboard(contar_registros_fn=None):
                 st.success("Nenhuma ocorrência registada.")
         elif detalhe == "contratos":
             st.subheader("📄 Detalhes: Vencimentos de Contratos (Próximos 30 dias)")
-            if not df_contratos.empty:
+            if not df_contratos_vencidos.empty:
+                st.dataframe(df_contratos_vencidos, use_container_width=True, hide_index=True)
+            elif not df_veiculos_vencidos.empty:
+                st.dataframe(df_veiculos_vencidos, use_container_width=True, hide_index=True)
+            elif not df_contratos.empty:
                 st.dataframe(df_contratos, use_container_width=True, hide_index=True)
             else:
                 st.info("Nenhum contrato próximo do vencimento encontrado.")
