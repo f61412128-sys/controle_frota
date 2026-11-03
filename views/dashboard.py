@@ -6,7 +6,7 @@ from PIL import Image
 from database.connection import get_connection
 
 
-def render_cards_veiculos_estilizados(df_veiculos):
+def render_cards_veiculos_estilizados(df_veiculos, df_manutencoes):
     if df_veiculos.empty:
         st.info("Nenhum veículo registado nesta secção.")
         return
@@ -64,6 +64,7 @@ def render_cards_veiculos_estilizados(df_veiculos):
     )
 
     for _, row in df_veiculos.iterrows():
+        v_id = row.get("id")
         placa = str(row.get("placa", "N/A"))
         modelo = str(row.get("modelo", "N/A"))
         tipo = str(row.get("tipo_propriedade", row.get("tipo", "N/A")))
@@ -74,6 +75,44 @@ def render_cards_veiculos_estilizados(df_veiculos):
         tipo_mov = row.get("ultimo_tipo_movimento", "")
         data_hora_chk = row.get("ultimo_data_hora", "N/A")
         endereco_chk = row.get("ultimo_endereco", "Não informado")
+
+        # --- LÓGICA RIGOROSA DA TROCA DE ÓLEO (A CADA 10.000 KM A PARTIR DA ÚLTIMA MANUTENÇÃO) ---
+        try:
+            km_raw = row.get("km_atual", 0)
+            km_atual = float(km_raw) if km_raw is not None and str(km_raw).strip() != "" else 0.0
+        except Exception:
+            km_atual = 0.0
+
+        # Procura a última manutenção registada para este veículo específico
+        km_ultima_troca = 0.0
+        if not df_manutencoes.empty and v_id is not None:
+            col_v_id = next((c for c in ["veiculo_id", "id_veiculo"] if c in df_manutencoes.columns), None)
+            col_km_m = next((c for c in ["km", "quilometragem", "odometro"] if c in df_manutencoes.columns), None)
+            if col_v_id and col_km_m:
+                df_m_veiculo = df_manutencoes[df_manutencoes[col_v_id] == v_id]
+                if not df_m_veiculo.empty:
+                    try:
+                        # Tenta ordenar pelo ID ou pela data para pegar a mais recente
+                        sort_col = "id" if "id" in df_m_veiculo.columns else df_m_veiculo.columns[0]
+                        df_m_veiculo = df_m_veiculo.sort_values(by=sort_col, ascending=False)
+                        val_km_manut = df_m_veiculo.iloc[0][col_km_m]
+                        if pd.notna(val_km_manut):
+                            km_ultima_troca = float(val_km_manut)
+                    except Exception:
+                        pass
+
+        # Se houver registo de manutenção, calcula com base nele; caso contrário, assume 0 (referência inicial)
+        km_rodados_desde_troca = km_atual - km_ultima_troca
+        if km_rodados_desde_troca < 0:
+            km_rodados_desde_troca = 0.0
+
+        km_faltantes = 10000.0 - km_rodados_desde_troca
+
+        if km_rodados_desde_troca >= 10000.0:
+            ultrapassado = int(km_rodados_desde_troca - 10000.0)
+            troca_oleo_str = f"⚠ Troca necessária agora! (Ultrapassou {ultrapassado:,} km)".replace(",", ".")
+        else:
+            troca_oleo_str = f"Dentro do prazo (Faltam {int(km_faltantes):,} km)".replace(",", ".")
 
         if status_disp == "Disponível":
             badge_html = '<span class="badge-disponivel">🟢 Disponível </span>'
@@ -94,6 +133,7 @@ def render_cards_veiculos_estilizados(df_veiculos):
                 <div class="veiculo-info">Último Registo{mov_text}: <span>{ultimo_resp}</span></div>
                 <div class="veiculo-info">Data e Hora: <span>{data_hora_chk}</span></div>
                 <div class="veiculo-info">Endereço: <span>{endereco_chk}</span></div>
+                <div class="veiculo-info">Troca de Óleo: <span>{troca_oleo_str}</span></div>
             </div>
         """,
             unsafe_allow_html=True,
@@ -588,9 +628,9 @@ def render_dashboard(contar_registros_fn=None):
     with tab_contratos:
         sub_alug, sub_prop = st.tabs(["📋 Alugados / Terceirizados", "🏢 Próprios"])
         with sub_alug:
-            render_cards_veiculos_estilizados(df_alugados)
+            render_cards_veiculos_estilizados(df_alugados, df_manutencoes)
         with sub_prop:
-            render_cards_veiculos_estilizados(df_proprios)
+            render_cards_veiculos_estilizados(df_proprios, df_manutencoes)
 
     with tab_consumo:
         st.markdown("##### 📊 Indicadores de Consumo e Combustível")
@@ -868,7 +908,7 @@ def render_dashboard(contar_registros_fn=None):
                 df_rodizio_veiculos = df_veiculos[
                     df_veiculos["placa"].astype(str).str.endswith(digitos_alvo, na=False)
                 ]
-                render_cards_veiculos_estilizados(df_rodizio_veiculos)
+                render_cards_veiculos_estilizados(df_rodizio_veiculos, df_manutencoes)
         else:
             st.markdown(
                 """
