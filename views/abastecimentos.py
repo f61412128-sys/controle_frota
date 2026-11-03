@@ -36,6 +36,12 @@ def salvar_abastecimento(veiculo_id, km, litros, valor, foto_bytes, usuario):
         """,
             (veiculo_id, km, litros, valor, foto_bytes, usuario, agora_local),
         )
+        
+        # --- ATUALIZAÇÃO AUTOMÁTICA DO KM DO VEÍCULO ---
+        cursor.execute(
+            "UPDATE veiculos SET km_atual = %s WHERE id = %s", (km, veiculo_id)
+        )
+        
         conn.commit()
     except Exception as e:
         conn.rollback()
