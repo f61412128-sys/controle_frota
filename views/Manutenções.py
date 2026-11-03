@@ -138,10 +138,25 @@ def render():
     # --- TAB 1: HISTÓRICO ---
     with tab1:
         st.subheader("Manutenções Registradas")
+        
         df_manut = carregar_manutencoes()
+        
         if not df_manut.empty:
+            # --- FILTRAR POR VEÍCULOS ---
+            veiculos_unicos = sorted(df_manut["placa"].unique().tolist())
+            filtro_veiculo = st.selectbox(
+                "Filtrar por Veículo (Placa):",
+                ["Todos os Veículos"] + veiculos_unicos
+            )
+            
+            df_exibicao = df_manut.copy()
+            if filtro_veiculo != "Todos os Veículos":
+                df_exibicao = df_exibicao[df_exibicao["placa"] == filtro_veiculo]
+            
+            st.markdown(f"Exibindo **{len(df_exibicao)}** registo(s):")
+            
             st.dataframe(
-                df_manut[
+                df_exibicao[
                     [
                         "placa",
                         "modelo",
@@ -149,6 +164,7 @@ def render():
                         "status",
                         "descricao",
                         "oficina",
+                        "km",
                         "valor",
                         "data_entrada",
                     ]
@@ -180,7 +196,6 @@ def render():
             )
 
             col1, col2 = st.columns(2)
-            # Adicionada a opção profissional "Troca de Óleo" diretamente no tipo de manutenção
             tipo = col1.selectbox(
                 "Tipo de Manutenção*", 
                 ["Troca de Óleo", "Preventiva", "Corretiva"]
@@ -203,7 +218,6 @@ def render():
             col6, col7 = st.columns(2)
             data_manut = col6.date_input("Data do Serviço")
             
-            # Se for Troca de Óleo, o padrão lógico ideal para a próxima revisão já passa a ser +10.000 km
             val_proximo_km = (int(km_registro) + 10000) if tipo == "Troca de Óleo" else 15000
             proximo_km = col7.number_input(
                 "Próxima Revisão (KM)", min_value=0, value=val_proximo_km
@@ -242,7 +256,7 @@ def render():
             gasto_total = df_manut["valor"].sum()
             st.metric(
                 label="Gasto Total em Manutenção",
-                value=f"R$ {gaseto_total:,.2f}" if 'gaseto_total' in locals() else f"R$ {gasto_total:,.2f}",
+                value=f"R$ {gasto_total:,.2f}",
             )
 
             st.divider()
