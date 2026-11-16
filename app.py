@@ -1,7 +1,7 @@
-import base64
 import datetime
+import hashlib
+import hmac
 import os
-from pathlib import Path
 import sqlite3
 import sys
 
@@ -73,17 +73,42 @@ except Exception as e:
     st.exception(e)
     st.stop()
 
-# --- GESTÃO DE SESSÃO COM URL BLINDADA (ANTI-REFRESH) ---
+
+# --- FUNÇÕES DE ASSINATURA SEGURA DA SESSÃO (ANTI-REFRESH SEM INVASÃO) ---
+def _obter_chave_sessao():
+    return str(st.secrets.get("admin", {}).get("senha", "chave_padrao_fallback"))
+
+
+def gerar_token_sessao(perfil, nome, mot_id=""):
+    chave = _obter_chave_sessao().encode("utf-8")
+    payload = f"{perfil}|{nome}|{mot_id}".encode("utf-8")
+    return hmac.new(chave, payload, hashlib.sha256).hexdigest()[:24]
+
+
+def validar_token_sessao(perfil, nome, mot_id, token):
+    if not token:
+        return False
+    esperado = gerar_token_sessao(perfil, nome, mot_id)
+    return hmac.compare_digest(esperado, str(token))
+
+
+# --- GESTÃO DE SESSÃO COM URL ASSINADA (ANTI-REFRESH) ---
 params = st.query_params
 
 if "logado" not in st.session_state:
-    if params.get("logado") == "true":
+    perfil_url = params.get("perfil", "")
+    nome_url = params.get("nome", "")
+    mot_id_url = params.get("motorista_id", "")
+    token_url = params.get("token", "")
+
+    if params.get("logado") == "true" and validar_token_sessao(
+        perfil_url, nome_url, mot_id_url, token_url
+    ):
         st.session_state["logado"] = True
-        st.session_state["perfil"] = params.get("perfil", "admin")
-        st.session_state["usuario_nome"] = params.get("nome", "Administrador")
-        mot_id_str = params.get("motorista_id")
+        st.session_state["perfil"] = perfil_url
+        st.session_state["usuario_nome"] = nome_url
         st.session_state["motorista_id"] = (
-            int(mot_id_str) if mot_id_str and mot_id_str.isdigit() else None
+            int(mot_id_url) if mot_id_url and mot_id_url.isdigit() else None
         )
     else:
         st.session_state["logado"] = False
@@ -94,7 +119,6 @@ if "logado" not in st.session_state:
 if not st.session_state["logado"]:
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
-        # --- EXIBIÇÃO DA LOGO NA TELA DE LOGIN ---
         if os.path.exists("logo.png"):
             st.image("logo.png", use_container_width=True)
 
@@ -106,26 +130,38 @@ if not st.session_state["logado"]:
         btn_entrar = st.button("Entrar", use_container_width=True)
 
         if btn_entrar:
-            # Validação prioritária e direta do Administrador Mestre
-            if usuario_input.strip().lower() == "admin" and senha_input.strip() == "admin123":
+            admin_user = st.secrets.get("admin", {}).get("usuario", "")
+            admin_pass = st.secrets.get("admin", {}).get("senha", "")
+
+            if (
+                admin_user
+                and admin_pass
+                and usuario_input.strip().lower() == str(admin_user).strip().lower()
+                and senha_input.strip() == str(admin_pass).strip()
+            ):
+                nome_admin = "Administrador Mestre"
+                token = gerar_token_sessao("admin", nome_admin, "")
+
                 st.session_state["logado"] = True
                 st.session_state["perfil"] = "admin"
-                st.session_state["usuario_nome"] = "Administrador Mestre"
-                st.session_state["motorista_id"] = ""
+                st.session_state["usuario_nome"] = nome_admin
+                st.session_state["motorista_id"] = None
 
                 st.query_params["logado"] = "true"
                 st.query_params["perfil"] = "admin"
-                st.query_params["nome"] = "Administrador Mestre"
+                st.query_params["nome"] = nome_admin
+                st.query_params["token"] = token
 
                 st.rerun()
             else:
-                # Validação para os demais utilizadores no banco de dados
                 usuario_db = autenticar_usuario(usuario_input, senha_input)
 
                 if usuario_db:
                     perfil = usuario_db["perfil"]
                     nome = usuario_db["login"].capitalize()
                     mot_id = usuario_db["motorista_id"]
+                    mot_id_str = str(mot_id) if mot_id else ""
+                    token = gerar_token_sessao(perfil, nome, mot_id_str)
 
                     st.session_state["logado"] = True
                     st.session_state["perfil"] = perfil
@@ -135,8 +171,9 @@ if not st.session_state["logado"]:
                     st.query_params["logado"] = "true"
                     st.query_params["perfil"] = perfil
                     st.query_params["nome"] = nome
-                    if mot_id:
-                        st.query_params["motorista_id"] = str(mot_id)
+                    if mot_id_str:
+                        st.query_params["motorista_id"] = mot_id_str
+                    st.query_params["token"] = token
 
                     st.rerun()
                 else:
@@ -228,8 +265,10 @@ else:
 
             with tab_listar:
                 if usuarios:
+                    df_u = pd.DataFrame([dict(u) for u in usuarios])
+                    cols_visiveis = [c for c in df_u.columns if "senha" not in c.lower()]
                     st.dataframe(
-                        pd.DataFrame([dict(u) for u in usuarios]),
+                        df_u[cols_visiveis],
                         use_container_width=True,
                         hide_index=True,
                     )
