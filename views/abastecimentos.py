@@ -7,41 +7,63 @@ from database.connection import get_connection
 from views.services.cadastros_service import listar_veiculos
 
 
-def salvar_abastecimento(veiculo_id, km, litros, valor, foto_bytes, usuario):
+def garantir_estrutura_abastecimentos(cursor):
+    """Garante a existência da tabela e da coluna adicional para a foto do odômetro."""
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS abastecimentos (
+            id SERIAL PRIMARY KEY,
+            veiculo_id INT,
+            km NUMERIC,
+            litros NUMERIC,
+            valor NUMERIC,
+            foto BYTEA,
+            foto_odometro BYTEA,
+            usuario TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    cursor.execute(
+        "ALTER TABLE abastecimentos ADD COLUMN IF NOT EXISTS foto_odometro BYTEA;"
+    )
+
+
+def salvar_abastecimento(
+    veiculo_id, km, litros, valor, foto_cupom_bytes, foto_odometro_bytes, usuario
+):
     conn = get_connection()
     cursor = conn.cursor()
     try:
-        cursor.execute(
-            """
-            CREATE TABLE IF NOT EXISTS abastecimentos (
-                id SERIAL PRIMARY KEY,
-                veiculo_id INT,
-                km NUMERIC,
-                litros NUMERIC,
-                valor NUMERIC,
-                foto BYTEA,
-                usuario TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """
-        )
+        garantir_estrutura_abastecimentos(cursor)
         conn.commit()
 
         agora_local = datetime.datetime.now()
 
         cursor.execute(
             """
-            INSERT INTO abastecimentos (veiculo_id, km, litros, valor, foto, usuario, created_at)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
-        """,
-            (veiculo_id, km, litros, valor, foto_bytes, usuario, agora_local),
+            INSERT INTO abastecimentos (
+                veiculo_id, km, litros, valor, foto, foto_odometro, usuario, created_at
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            """,
+            (
+                veiculo_id,
+                km,
+                litros,
+                valor,
+                foto_cupom_bytes,
+                foto_odometro_bytes,
+                usuario,
+                agora_local,
+            ),
         )
-        
+
         # --- ATUALIZAÇÃO AUTOMÁTICA DO KM DO VEÍCULO ---
         cursor.execute(
             "UPDATE veiculos SET km_atual = %s WHERE id = %s", (km, veiculo_id)
         )
-        
+
         conn.commit()
     except Exception as e:
         conn.rollback()
@@ -49,6 +71,50 @@ def salvar_abastecimento(veiculo_id, km, litros, valor, foto_bytes, usuario):
     finally:
         cursor.close()
         conn.close()
+
+
+def render_captura_imagem(titulo, chave_prefixo, legenda_preview):
+    """Componente reutilizável para capturar ou carregar imagem com pré-visualização."""
+    st.subheader(titulo)
+
+    state_key = f"{chave_prefixo}_bytes"
+    if state_key not in st.session_state:
+        st.session_state[state_key] = None
+
+    tipo_envio = st.radio(
+        "Método de captura da foto:",
+        ["Tirar Foto com a Câmara", "Carregar Imagem"],
+        horizontal=True,
+        key=f"tipo_envio_{chave_prefixo}",
+    )
+
+    if tipo_envio == "Tirar Foto com a Câmara":
+        foto_cam = st.camera_input(
+            f"Capturar imagem ({titulo})", key=f"cam_{chave_prefixo}"
+        )
+        if foto_cam is not None:
+            st.session_state[state_key] = foto_cam.getvalue()
+    else:
+        foto_arq = st.file_uploader(
+            f"Carregar arquivo ({titulo})",
+            type=["png", "jpg", "jpeg", "heic"],
+            key=f"file_{chave_prefixo}",
+        )
+        if foto_arq is not None:
+            st.session_state[state_key] = foto_arq.getvalue()
+
+    if st.session_state[state_key] is not None:
+        try:
+            img_preview = Image.open(io.BytesIO(st.session_state[state_key]))
+            st.image(img_preview, caption=legenda_preview, width=200)
+            if st.button(
+                "🗑 Limpar / Tirar Outra Foto",
+                key=f"btn_limpar_{chave_prefixo}",
+            ):
+                st.session_state[state_key] = None
+                st.rerun()
+        except Exception:
+            pass
 
 
 def render():
@@ -59,7 +125,9 @@ def render():
     )
 
     with tab_novo:
-        st.caption("Registe o abastecimento e envie o comprovante.")
+        st.caption(
+            "Registe o abastecimento e envie as fotos do odômetro e do cupom fiscal."
+        )
         veiculos = listar_veiculos()
 
         if not veiculos:
@@ -94,67 +162,46 @@ def render():
         )
 
         st.divider()
-        st.subheader("📸 Comprovante / Nota Fiscal")
 
-        tipo_envio = st.radio(
-            "Método de captura da foto:",
-            ["Tirar Foto com a Câmara", "Carregar Imagem"],
-            horizontal=True,
-            key="tipo_envio_abastecimento",
+        # 1. Captura da Foto do Odômetro
+        render_captura_imagem(
+            titulo="⏲️ 1. Foto do Odômetro (Painel KM)",
+            chave_prefixo="abast_odometro",
+            legenda_preview="⏲️ Pré-visualização do Odômetro",
         )
 
-        if "abastecimento_foto_bytes" not in st.session_state:
-            st.session_state["abastecimento_foto_bytes"] = None
+        st.divider()
 
-        if tipo_envio == "Tirar Foto com a Câmara":
-            foto_cam = st.camera_input(
-                "Aponte para o comprovante de abastecimento", key="cam_abast"
-            )
-            if foto_cam is not None:
-                st.session_state["abastecimento_foto_bytes"] = (
-                    foto_cam.getvalue()
-                )
-        else:
-            foto_arq = st.file_uploader(
-                "Carregar imagem do comprovante",
-                type=["png", "jpg", "jpeg", "heic"],
-                key="file_abast",
-            )
-            if foto_arq is not None:
-                st.session_state["abastecimento_foto_bytes"] = (
-                    foto_arq.getvalue()
-                )
-
-        if st.session_state["abastecimento_foto_bytes"] is not None:
-            try:
-                img_preview = Image.open(
-                    io.BytesIO(st.session_state["abastecimento_foto_bytes"])
-                )
-                st.image(
-                    img_preview,
-                    caption="🧾 Pré-visualização do Comprovante Capturado",
-                    width=200,
-                )
-                if st.button(
-                    "🗑 Limpar / Tirar Outra Foto", key="btn_limpar_foto_abast"
-                ):
-                    st.session_state["abastecimento_foto_bytes"] = None
-                    st.rerun()
-            except Exception:
-                pass
+        # 2. Captura da Foto do Cupom Fiscal
+        render_captura_imagem(
+            titulo="🧾 2. Foto do Cupom Fiscal / Comprovante",
+            chave_prefixo="abast_cupom",
+            legenda_preview="🧾 Pré-visualização do Cupom Fiscal",
+        )
 
         st.divider()
 
         if st.button("✅ Salvar Abastecimento", use_container_width=True):
             try:
-                foto_bytes = st.session_state.get(
-                    "abastecimento_foto_bytes", None
+                foto_odometro_bytes = st.session_state.get(
+                    "abast_odometro_bytes", None
                 )
-                salvar_abastecimento(
-                    veiculo_id, km, litros, valor, foto_bytes, usuario
+                foto_cupom_bytes = st.session_state.get(
+                    "abast_cupom_bytes", None
                 )
 
-                st.session_state["abastecimento_foto_bytes"] = None
+                salvar_abastecimento(
+                    veiculo_id,
+                    km,
+                    litros,
+                    valor,
+                    foto_cupom_bytes,
+                    foto_odometro_bytes,
+                    usuario,
+                )
+
+                st.session_state["abast_odometro_bytes"] = None
+                st.session_state["abast_cupom_bytes"] = None
 
                 st.success("Abastecimento registado com sucesso!")
                 st.rerun()
@@ -165,6 +212,11 @@ def render():
         st.subheader("Histórico de Consumo e Abastecimentos")
         conn = get_connection()
         try:
+            cursor = conn.cursor()
+            garantir_estrutura_abastecimentos(cursor)
+            conn.commit()
+            cursor.close()
+
             query = """
                 SELECT 
                     a.id,
@@ -175,7 +227,8 @@ def render():
                     a.valor,
                     a.usuario,
                     a.created_at,
-                    a.foto
+                    a.foto,
+                    a.foto_odometro
                 FROM abastecimentos a
                 LEFT JOIN veiculos v ON a.veiculo_id = v.id
                 ORDER BY a.id DESC
@@ -201,20 +254,38 @@ def render():
                     st.markdown(
                         f"**ID:** {row['id']} | **Veículo:** {row['placa']} - {row['modelo']} | **KM:** {row['km']} | **Litros:** {row['litros']} | **Valor:** R$ {row['valor']} | **Data:** {data_formatada}"
                     )
-                    foto_db = row.get("foto")
-                    if foto_db is not None:
-                        try:
-                            if isinstance(foto_db, memoryview):
-                                foto_db = bytes(foto_db)
-                            if isinstance(foto_db, bytes) and len(foto_db) > 0:
-                                img_hist = Image.open(io.BytesIO(foto_db))
-                                st.image(
-                                    img_hist,
-                                    caption=f"🧾 Comprovante (Registo #{row['id']})",
-                                    width=140,
-                                )
-                        except Exception:
-                            pass
+
+                    foto_odo_db = row.get("foto_odometro")
+                    foto_cupom_db = row.get("foto")
+
+                    tem_odo = foto_odo_db is not None and len(bytes(foto_odo_db)) > 0
+                    tem_cupom = foto_cupom_db is not None and len(bytes(foto_cupom_db)) > 0
+
+                    if tem_odo or tem_cupom:
+                        col_img1, col_img2, _ = st.columns([1, 1, 3])
+                        with col_img1:
+                            if tem_odo:
+                                try:
+                                    img_odo = Image.open(io.BytesIO(bytes(foto_odo_db)))
+                                    st.image(
+                                        img_odo,
+                                        caption=f"⏲️ Odômetro (#{row['id']})",
+                                        width=140,
+                                    )
+                                except Exception:
+                                    pass
+                        with col_img2:
+                            if tem_cupom:
+                                try:
+                                    img_cupom = Image.open(io.BytesIO(bytes(foto_cupom_db)))
+                                    st.image(
+                                        img_cupom,
+                                        caption=f"🧾 Cupom (#{row['id']})",
+                                        width=140,
+                                    )
+                                except Exception:
+                                    pass
+
                     st.divider()
         except Exception:
             st.info("A tabela de abastecimentos ainda não possui registos.")
