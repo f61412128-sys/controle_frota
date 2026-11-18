@@ -157,6 +157,19 @@ def ler_tabela_direta(query):
         return pd.DataFrame()
 
 
+def limpar_df_para_exibicao(df):
+    """Remove colunas duplicadas e colunas binárias de imagem antes de enviar ao st.dataframe."""
+    if df.empty:
+        return df
+    df_clean = df.loc[:, ~df.columns.duplicated()].copy()
+    cols_remover = [
+        c for c in df_clean.columns
+        if any(k in c.lower() for k in ["foto", "imagem", "comprovante", "anexo", "bytes", "blob"])
+    ]
+    df_clean.drop(columns=cols_remover, inplace=True, errors="ignore")
+    return df_clean
+
+
 def deletar_registro(tabela, id_registro):
     conn = get_connection()
     try:
@@ -173,10 +186,7 @@ def deletar_registro(tabela, id_registro):
 
 def gerar_excel_bytes(df, nome_aba="Dados"):
     output = io.BytesIO()
-    df_export = df.copy()
-    for col in df_export.columns:
-        if any(k in col.lower() for k in ["foto", "imagem", "comprovante", "anexo", "bytes", "blob"]):
-            df_export.drop(columns=[col], inplace=True, errors="ignore")
+    df_export = limpar_df_para_exibicao(df)
 
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
         df_export.to_excel(writer, index=False, sheet_name=nome_aba)
@@ -236,7 +246,7 @@ def render_dashboard(contar_registros_fn=None):
         try:
             if foto_oc_col and has_chk_id:
                 query_ocorr = f"""
-                    SELECT o.*, COALESCE(o.{foto_oc_col}, c.foto) as foto, v.placa, v.modelo 
+                    SELECT o.*, COALESCE(o.{foto_oc_col}, c.foto) as foto_evidencia, v.placa, v.modelo 
                     FROM ocorrencias o
                     LEFT JOIN checklists c ON o.checklist_id = c.id
                     LEFT JOIN veiculos v ON o.veiculo_id = v.id
@@ -244,10 +254,11 @@ def render_dashboard(contar_registros_fn=None):
                 """
                 df_temp_join = ler_tabela_direta(query_ocorr)
                 if not df_temp_join.empty:
+                    df_temp_join["foto"] = df_temp_join["foto_evidencia"]
                     df_ocorrencias = df_temp_join
             elif foto_oc_col:
                 query_ocorr = f"""
-                    SELECT o.*, o.{foto_oc_col} as foto, v.placa, v.modelo 
+                    SELECT o.*, v.placa, v.modelo 
                     FROM ocorrencias o
                     LEFT JOIN veiculos v ON o.veiculo_id = v.id
                     ORDER BY o.id DESC
@@ -472,7 +483,7 @@ def render_dashboard(contar_registros_fn=None):
                 hoje = pd.Timestamp.now().normalize()
                 datas_venc = pd.to_datetime(df_contratos[col_venc], errors="coerce")
                 limite = hoje + pd.Timedelta(days=30)
-                mask_venc = (datas_venc >= hoje) & (datas_venc <= limite) | (datas_venc < hoje)
+                mask_venc = ((datas_venc >= hoje) & (datas_venc <= limite)) | (datas_venc < hoje)
                 df_contratos_vencidos = df_contratos[mask_venc].copy()
                 total_venc_contratos = int(mask_venc.sum())
             except Exception:
@@ -491,7 +502,7 @@ def render_dashboard(contar_registros_fn=None):
                 hoje = pd.Timestamp.now().normalize()
                 datas_venc = pd.to_datetime(df_veiculos[col_venc_v], errors="coerce")
                 limite = hoje + pd.Timedelta(days=30)
-                mask_venc_v = (datas_venc >= hoje) & (datas_venc <= limite) | (datas_venc < hoje)
+                mask_venc_v = ((datas_venc >= hoje) & (datas_venc <= limite)) | (datas_venc < hoje)
                 df_veiculos_vencidos = df_veiculos[mask_venc_v].copy()
                 total_venc_contratos = int(mask_venc_v.sum())
             except Exception:
@@ -562,52 +573,52 @@ def render_dashboard(contar_registros_fn=None):
         if detalhe == "frota_total":
             st.subheader("📋 Detalhes: Frota Total de Veículos")
             if not df_veiculos.empty:
-                st.dataframe(df_veiculos, use_container_width=True, hide_index=True)
+                st.dataframe(limpar_df_para_exibicao(df_veiculos), use_container_width=True, hide_index=True)
             else:
                 st.info("Nenhum veículo registado.")
         elif detalhe == "proprios":
             st.subheader("🏢 Detalhes: Veículos Próprios")
             if not df_proprios.empty:
-                st.dataframe(df_proprios, use_container_width=True, hide_index=True)
+                st.dataframe(limpar_df_para_exibicao(df_proprios), use_container_width=True, hide_index=True)
             else:
                 st.info("Nenhum veículo próprio registado.")
         elif detalhe == "alugados":
             st.subheader("📋 Detalhes: Veículos Alugados / Terceirizados")
             if not df_alugados.empty:
-                st.dataframe(df_alugados, use_container_width=True, hide_index=True)
+                st.dataframe(limpar_df_para_exibicao(df_alugados), use_container_width=True, hide_index=True)
             else:
                 st.info("Nenhum veículo alugado registado.")
         elif detalhe == "manutencao":
             st.subheader("🛠 Detalhes: Veículos / Histórico em Manutenção")
             if not df_manutencoes.empty:
-                st.dataframe(df_manutencoes, use_container_width=True, hide_index=True)
+                st.dataframe(limpar_df_para_exibicao(df_manutencoes), use_container_width=True, hide_index=True)
             else:
                 st.info("Nenhuma manutenção registada.")
         elif detalhe == "custo_manut":
             st.subheader("💰 Detalhes: Custos de Manutenção")
             st.write(f"O custo total acumulado em manutenções é de **R$ {custo_total_manut:,.2f}**.")
             if not df_manutencoes.empty:
-                st.dataframe(df_manutencoes, use_container_width=True, hide_index=True)
+                st.dataframe(limpar_df_para_exibicao(df_manutencoes), use_container_width=True, hide_index=True)
         elif detalhe == "motoristas":
             st.subheader("👨 Detalhes: Motoristas Registados")
             if not df_motoristas.empty:
-                st.dataframe(df_motoristas, use_container_width=True, hide_index=True)
+                st.dataframe(limpar_df_para_exibicao(df_motoristas), use_container_width=True, hide_index=True)
             else:
                 st.info("Nenhum motorista registado.")
         elif detalhe == "ocorrencias":
             st.subheader("⚠ Detalhes: Ocorrências e Incidentes")
             if not df_ocorrencias.empty:
-                st.dataframe(df_ocorrencias, use_container_width=True, hide_index=True)
+                st.dataframe(limpar_df_para_exibicao(df_ocorrencias), use_container_width=True, hide_index=True)
             else:
                 st.success("Nenhuma ocorrência registada.")
         elif detalhe == "contratos":
             st.subheader("📄 Detalhes: Vencimentos de Contratos (Próximos 30 dias)")
             if not df_contratos_vencidos.empty:
-                st.dataframe(df_contratos_vencidos, use_container_width=True, hide_index=True)
+                st.dataframe(limpar_df_para_exibicao(df_contratos_vencidos), use_container_width=True, hide_index=True)
             elif not df_veiculos_vencidos.empty:
-                st.dataframe(df_veiculos_vencidos, use_container_width=True, hide_index=True)
+                st.dataframe(limpar_df_para_exibicao(df_veiculos_vencidos), use_container_width=True, hide_index=True)
             elif not df_contratos.empty:
-                st.dataframe(df_contratos, use_container_width=True, hide_index=True)
+                st.dataframe(limpar_df_para_exibicao(df_contratos), use_container_width=True, hide_index=True)
             else:
                 st.info("Nenhum contrato próximo do vencimento encontrado.")
 
